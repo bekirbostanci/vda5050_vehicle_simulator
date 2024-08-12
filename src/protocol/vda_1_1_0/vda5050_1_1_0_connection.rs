@@ -3,20 +3,6 @@ use serde::Serialize;
 use std::string::String;
 
 /// AGV connection state reported as a last will message. Has to be sent with retain flag. Once the AGV comes online, it has to send this message on its connect topic, with the connection_state enum set to "ONLINE". The last will message is to be configured with the connection state set to "CONNECTIONBROKEN". Thus, if the AGV disconnects from the broker, master control gets notified via the topic "connection". If the AGV is disconnecting in an orderly fashion (e.g. shutting down, sleeping), the AGV is to publish a message on this topic with the connection_state set to "OFFLINE".
-pub fn connection_topic(
-    vda_interface: &str,
-    vda_version: &str,
-    manufacturer: &str,
-    serial_number: &str,
-) -> String {
-    let vda5050_connection_topic = format!(
-        "{}/{}/{}/{}/connection",
-        vda_interface, vda_version, manufacturer, serial_number
-    );
-
-    return vda5050_connection_topic;
-}
-
 #[serde_with::skip_serializing_none]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,7 +23,7 @@ pub struct Connection {
 
 /// Connection state.
 #[derive(Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ConnectionState {
     /// The Connection between AGV and broker is active.
     Online,

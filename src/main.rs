@@ -3,7 +3,7 @@ use paho_mqtt as mqtt;
 use std::option::Option;
 use std::sync::Arc;
 use std::{process, time::Duration};
-use tokio::sync::Mutex;
+use tokio::sync::{AcquireError, Mutex};
 
 mod config;
 mod mqtt_utils;
@@ -15,23 +15,28 @@ struct VehicleSimulator {
     connection: protocol::vda_1_1_0::vda5050_1_1_0_connection::Connection,
     state_topic: String,
     state: protocol::vda_1_1_0::vda5050_1_1_0_state::State,
+    visualization_topic: String,
+    visualization: protocol::vda_1_1_0::vda5050_1_1_0_visualization::Visualization,
+
     order: Option<protocol::vda_1_1_0::vda5050_1_1_0_order::Order>,
 }
 
 impl VehicleSimulator {
     fn new(config: config::Config) -> VehicleSimulator {
-        // Connection
-        let connection_topic = protocol::vda_1_1_0::vda5050_1_1_0_connection::connection_topic(
+        let base_topic = mqtt_utils::generate_vda_mqtt_base_topic(
             &config.mqtt_broker.vda_interface,
             &config.vehicle.vda_version,
             &config.vehicle.manufacturer,
             &config.vehicle.serial_number,
         );
 
+        // Connection
+        let connection_topic = format!("{}/connection", base_topic);
+
         let connection = protocol::vda_1_1_0::vda5050_1_1_0_connection::Connection {
             header_id: 0,
             timestamp: utils::get_timestamp(),
-            version: String::from(&config.vehicle.vda_version),
+            version: String::from(&config.vehicle.vda_full_version),
             manufacturer: String::from(&config.vehicle.manufacturer),
             serial_number: String::from(&config.vehicle.serial_number),
             connection_state:
@@ -39,19 +44,14 @@ impl VehicleSimulator {
         };
 
         // State
-        let state_topic = protocol::vda_1_1_0::vda5050_1_1_0_state::state_topic(
-            &config.mqtt_broker.vda_interface,
-            &config.vehicle.vda_version,
-            &config.vehicle.manufacturer,
-            &config.vehicle.serial_number,
-        );
+        let state_topic = format!("{}/state", base_topic);
         let agv_position: protocol::vda5050_common::AgvPosition =
             protocol::vda5050_common::AgvPosition {
                 x: 0.0,
                 y: 0.0,
                 position_initialized: true,
                 theta: 0.0,
-                map_id: String::from("test"),
+                map_id: String::from("webots"),
                 deviation_range: None,
                 map_description: None,
                 localization_score: None,
@@ -60,9 +60,9 @@ impl VehicleSimulator {
         let state = protocol::vda_1_1_0::vda5050_1_1_0_state::State {
             header_id: 0,
             timestamp: utils::get_timestamp(),
-            version: String::from(config.vehicle.vda_full_version),
-            manufacturer: String::from(config.vehicle.manufacturer),
-            serial_number: String::from(config.vehicle.serial_number),
+            version: String::from(&config.vehicle.vda_full_version),
+            manufacturer: String::from(&config.vehicle.manufacturer),
+            serial_number: String::from(&config.vehicle.serial_number),
             driving: false,
             distance_since_last_node: None,
             operating_mode: protocol::vda_1_1_0::vda5050_1_1_0_state::OperatingMode::Automatic,
@@ -89,9 +89,21 @@ impl VehicleSimulator {
             },
             paused: None,
             new_base_request: None,
-            agv_position: Some(agv_position),
+            agv_position: Some(agv_position.clone()),
             velocity: None,
             zone_set_id: None,
+        };
+
+        // Visualization
+        let visualization_topic = format!("{}/visualization", base_topic);
+        let visualization = protocol::vda_1_1_0::vda5050_1_1_0_visualization::Visualization {
+            header_id: 0,
+            timestamp: utils::get_timestamp(),
+            version: String::from(&config.vehicle.vda_full_version),
+            manufacturer: String::from(&config.vehicle.manufacturer),
+            serial_number: String::from(&config.vehicle.serial_number),
+            agv_position: Some(agv_position.clone()),
+            velocity: None,
         };
 
         VehicleSimulator {
@@ -99,6 +111,8 @@ impl VehicleSimulator {
             connection,
             state_topic,
             state,
+            visualization_topic,
+            visualization,
             order: None,
         }
     }
@@ -111,7 +125,7 @@ impl VehicleSimulator {
             .await
             .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
 
         self.connection.header_id = self.connection.header_id + 1;
         self.connection.timestamp = utils::get_timestamp();
@@ -119,6 +133,15 @@ impl VehicleSimulator {
             protocol::vda_1_1_0::vda5050_1_1_0_connection::ConnectionState::Online;
         let json_connection_online = serde_json::to_string(&self.connection).unwrap();
         mqtt_utils::mqtt_publish(mqtt_cli, &self.connection_topic, &json_connection_online)
+            .await
+            .unwrap();
+    }
+
+    async fn publish_visualization(&mut self, mqtt_cli: &mqtt::AsyncClient) {
+        self.visualization.header_id = self.visualization.header_id + 1;
+        self.visualization.timestamp = utils::get_timestamp();
+        let json_visualization = serde_json::to_string(&self.visualization).unwrap();
+        mqtt_utils::mqtt_publish(mqtt_cli, &self.visualization_topic, &json_visualization)
             .await
             .unwrap();
     }
@@ -185,7 +208,6 @@ impl VehicleSimulator {
         // Set orderUpdateId
         let last_node_id = &self.order.as_ref().unwrap().nodes[0].node_id;
         self.state.last_node_id = String::from(last_node_id);
-        println!("Order Node: {:?}", last_node_id);
         self.state.order_id = self.order.as_ref().unwrap().order_id.clone();
         self.state.order_update_id = self.order.as_ref().unwrap().order_update_id;
 
@@ -202,17 +224,18 @@ impl VehicleSimulator {
             };
             self.state.node_states.push(node_state);
 
-            // TODO: add action states
-            // for action in node.actions {
-            //     let action_state = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionState {
-            //         action_id: action.action_id.clone(),
-            //         action_type: action.action_type.clone(),
-            //         action_status: action.action_status.clone(),
-            //         action_description: action.action_description.clone(),
-            //         result_description: action.result_description.clone()
-            //     };
-            //     self.state.action_states.push(action_state);
-            // }
+            for action in &node.actions {
+                let action: protocol::vda_1_1_0::vda5050_1_1_0_action::Action = action.clone();
+                let action_state = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionState {
+                    action_id: action.action_id.clone(),
+                    action_type: Some(action.action_type.clone()),
+                    action_description: action.action_description.clone(),
+                    action_status: protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting,
+                    result_description: None,
+
+                };
+                self.state.action_states.push(action_state);
+            }
         }
 
         for edge in &self.order.as_ref().unwrap().edges {
@@ -225,7 +248,18 @@ impl VehicleSimulator {
             };
             self.state.edge_states.push(edge_state);
 
-            // TODO: add action states
+            for action in &edge.actions {
+                let action: protocol::vda_1_1_0::vda5050_1_1_0_action::Action = action.clone();
+                let action_state = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionState {
+                    action_id: action.action_id.clone(),
+                    action_type: Some(action.action_type.clone()),
+                    action_description: action.action_description.clone(),
+                    action_status: protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting,
+                    result_description: None,
+
+                };
+                self.state.action_states.push(action_state);
+            }
         }
     }
 
@@ -273,6 +307,8 @@ impl VehicleSimulator {
 
         self.state.agv_position.as_mut().unwrap().x = updated_vehicle_position.0;
         self.state.agv_position.as_mut().unwrap().y = updated_vehicle_position.1;
+
+        self.visualization.agv_position = Some(self.state.agv_position.clone().unwrap());
 
         let distance_to_next_node = utils::get_distance(
             vehicle_position.x,
@@ -371,6 +407,8 @@ async fn publish_vda_messages(clone: Arc<Mutex<VehicleSimulator>>) {
 
     loop {
         clone.lock().await.publish_state(&mqtt_cli).await;
+
+        clone.lock().await.publish_visualization(&mqtt_cli).await;
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }

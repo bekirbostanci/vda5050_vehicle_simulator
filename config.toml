@@ -4,7 +4,11 @@ port = "1883"
 vda_interface = "uagv"
 
 [vehicle]
-serial_number = "0001"
+serial_number = "s13"
 manufacturer = "rikeb"
 vda_version = "v2"
 vda_full_version = "2.0.0"
+
+[settings]
+state_frequency = 1.0
+visualization_frequency = 5.0 

@@ -29,3 +29,17 @@ pub async fn mqtt_publish(mqtt_cli: &mqtt::AsyncClient, topic: &str, data: &str)
     mqtt_cli.publish(msg).await?;
     Ok(())
 }
+
+pub fn generate_vda_mqtt_base_topic(
+    vda_interface: &str,
+    vda_version: &str,
+    manufacturer: &str,
+    serial_number: &str,
+) -> String {
+    let vda5050_base_topic = format!(
+        "{}/{}/{}/{}",
+        vda_interface, vda_version, manufacturer, serial_number
+    );
+
+    return vda5050_base_topic;
+}

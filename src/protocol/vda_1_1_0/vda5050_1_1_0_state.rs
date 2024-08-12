@@ -2,21 +2,6 @@ use serde::Serialize;
 use std::option::Option;
 use crate::protocol::vda5050_common::{AgvPosition, BoundingBoxReference, HeaderId, LoadDimensions, NodePosition,  Trajectory, Velocity};
 
-
-pub fn state_topic(
-    vda_interface: &str,
-    vda_version: &str,
-    manufacturer: &str,
-    serial_number: &str,
-) -> String {
-    let vda5050_connection_topic = format!(
-        "{}/{}/{}/{}/state",
-        vda_interface, vda_version, manufacturer, serial_number
-    );
-
-    return vda5050_connection_topic;
-}
-
 /// All encompassing state of the AGV.
 #[serde_with::skip_serializing_none]
 #[derive(Serialize)]
