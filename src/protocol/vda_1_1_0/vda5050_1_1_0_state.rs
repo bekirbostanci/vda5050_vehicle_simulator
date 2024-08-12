@@ -1,6 +1,6 @@
+use serde::Serialize;
 use std::option::Option;
 use crate::protocol::vda5050_common::{AgvPosition, BoundingBoxReference, HeaderId, LoadDimensions, NodePosition,  Trajectory, Velocity};
-use serde::Serialize;
 
 
 pub fn state_topic(
@@ -74,7 +74,7 @@ pub struct State {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeState {
     /// Unique node identification.

@@ -1,7 +1,7 @@
 use std::string::String;
 use std::vec::Vec;
 use std::option::Option;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 pub type HeaderId = u64;
 
@@ -9,7 +9,7 @@ pub type HeaderId = u64;
 
 /// Current position of the AGV on the map. Optional: Can only be omitted for AGVs without the capability to localize themselves, e.g. line guided AGVs.
 #[serde_with::skip_serializing_none]
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AgvPosition {
     /// X-position on the map in reference to the map coordinate system. Precision is up to the specific implementation.
@@ -46,7 +46,7 @@ pub struct BoundingBoxReference {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ControlPoint {
     /// X coordinate described in the world coordinate system.
@@ -74,7 +74,7 @@ pub struct LoadDimensions {
 
 /// Node position. The object is defined in chapter 6.6. Optional: master control has this information. Can be sent additionally, e.g. for debugging purposes.
 #[serde_with::skip_serializing_none]
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodePosition {
     /// X coordinate described in the world coordinate system.
@@ -99,7 +99,7 @@ pub struct NodePosition {
 
 /// The trajectory is to be communicated as a NURBS and is defined in chapter 6.4. Trajectory segments are from the point where the AGV starts to enter the edge until the point where it reports that the next node was traversed.
 #[serde_with::skip_serializing_none]
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trajectory {
     /// Defines the number of control points that influence any given point on the curve. Increasing the degree increases continuity. If not defined, the default value is 1.
