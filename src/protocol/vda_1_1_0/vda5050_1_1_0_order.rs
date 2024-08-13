@@ -6,7 +6,7 @@ use crate::protocol::vda5050_common::{HeaderId, NodePosition, Trajectory};
 
 /// An order to be communicated from master control to the AGV.
 #[serde_with::skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     /// header_id of the message. The header_id is defined per topic and incremented by 1 with each sent (but not necessarily received) message.
@@ -32,7 +32,7 @@ pub struct Order {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Node {
     /// Unique node identification. For example: pumpenhaus_1, MONTAGE
@@ -50,7 +50,7 @@ pub struct Node {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Edge {
     /// Unique edge identification
@@ -90,7 +90,7 @@ pub struct Edge {
 }
  
 #[serde_with::skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OrientationType {
     /// Relative to the global project specific map coordinate system.

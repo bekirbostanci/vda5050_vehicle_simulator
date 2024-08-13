@@ -21,7 +21,14 @@ pub struct VehicleConfig {
 }
 
 #[derive(Deserialize, Clone)]
+pub struct Settings {
+    pub action_time: f32,
+    pub speed: f32,
+}
+
+#[derive(Deserialize, Clone)]
 pub struct Config {
     pub mqtt_broker: MqttBrokerConfig,
     pub vehicle: VehicleConfig,
+    pub settings: Settings
 }

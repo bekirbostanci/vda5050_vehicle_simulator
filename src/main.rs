@@ -1,9 +1,10 @@
+use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use paho_mqtt as mqtt;
 use std::option::Option;
 use std::sync::Arc;
 use std::{process, time::Duration};
-use tokio::sync::{AcquireError, Mutex};
+use tokio::sync::Mutex;
 
 mod config;
 mod mqtt_utils;
@@ -19,6 +20,9 @@ struct VehicleSimulator {
     visualization: protocol::vda_1_1_0::vda5050_1_1_0_visualization::Visualization,
 
     order: Option<protocol::vda_1_1_0::vda5050_1_1_0_order::Order>,
+
+    config: config::Config,
+    action_start_time: Option<DateTime<Utc>>,
 }
 
 impl VehicleSimulator {
@@ -114,6 +118,8 @@ impl VehicleSimulator {
             visualization_topic,
             visualization,
             order: None,
+            action_start_time: None,
+            config: config,
         }
     }
 
@@ -156,60 +162,58 @@ impl VehicleSimulator {
             .unwrap();
     }
 
-    fn order_accept_procedure(&mut self) {
-        // Order procedure
-        if self.order.is_none() {
-            return;
-        }
-
-        if self.order.as_ref().unwrap().order_id != self.state.order_id {
+    fn order_accept_procedure(&mut self, order_request: protocol::vda_1_1_0::vda5050_1_1_0_order::Order) {
+        if order_request.order_id != self.state.order_id {
             // Empty string (""), if no previous orderId is available.
             if self.state.order_id == "" {
-                self.order_accept();
+                self.order_accept(order_request);
                 return;
             }
 
             // TODO: check action states
             // self.state.action_states.iter().all(|action_state| action_state.action_status != protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Finished);
-            if self.state.node_states.is_empty() == false && self.state.edge_states.is_empty() {
+            if self.state.node_states.len() == 0 && self.state.edge_states.len() == 0 {
                 // Delete action states
                 self.state.action_states = vec![];
-                self.order_accept();
+                self.order_accept(order_request);
                 return;
             } else {
-                self.order_reject();
+                self.order_reject("There is order_state or edge_state in state".to_string());
                 return;
             }
         } else {
-            if self.order.as_ref().unwrap().order_update_id > self.state.order_update_id {
+            if order_request.order_update_id > self.state.order_update_id {
                 if self.state.node_states.is_empty() == false && self.state.edge_states.is_empty() {
                     // Delete action states
                     self.state.action_states = vec![];
-                    self.order_accept();
+                    self.order_accept(order_request);
                     return;
                 } else {
-                    self.order_reject();
+                    self.order_reject("There is order_state or edge_state in state1".to_string());
                     return;
                 }
             } else {
-                self.order_reject();
+                self.order_reject("Order update id is lower".to_string());
                 return;
             }
         }
     }
 
-    fn order_accept(&mut self) {
+    fn order_accept(&mut self, order_request: protocol::vda_1_1_0::vda5050_1_1_0_order::Order) {
         // Check order
-        if self.order.is_none() {
-            return;
-        }
+        println!("Order accept: {}", self.state.order_id);
+        self.order = Some(order_request);
 
         // Set orderId
         // Set orderUpdateId
-        let last_node_id = &self.order.as_ref().unwrap().nodes[0].node_id;
-        self.state.last_node_id = String::from(last_node_id);
+        self.state.last_node_sequence_id = 0;
         self.state.order_id = self.order.as_ref().unwrap().order_id.clone();
         self.state.order_update_id = self.order.as_ref().unwrap().order_update_id;
+
+        // Delete old action states
+        self.state.action_states = vec![];
+        self.state.node_states = vec![];
+        self.state.edge_states = vec![];
 
         // Set nodeStates
         // Set edgeStates
@@ -232,7 +236,6 @@ impl VehicleSimulator {
                     action_description: action.action_description.clone(),
                     action_status: protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting,
                     result_description: None,
-
                 };
                 self.state.action_states.push(action_state);
             }
@@ -256,26 +259,75 @@ impl VehicleSimulator {
                     action_description: action.action_description.clone(),
                     action_status: protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting,
                     result_description: None,
-
                 };
                 self.state.action_states.push(action_state);
             }
         }
     }
 
-    fn order_reject(&mut self) {}
+    fn order_reject(&mut self, reason: String) {
+        println!("Order reject: {}", reason);
+    }
 
     fn state_iterate(&mut self) {
+        // Check action time
+        if self.action_start_time.is_none() == false
+            && chrono::Utc::now().timestamp()
+                < self.action_start_time.unwrap().timestamp()
+                    + self.config.settings.action_time as i64
+        {
+            return;
+        }
+
         // Check order
         if self.order.is_none() {
             return;
         }
-        // Check last node arrived
-        if self.state.last_node_sequence_id == self.state.node_states.last().unwrap().sequence_id {
-            return;
+
+        let order_last_node_index = self
+            .order
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .position(|node| node.sequence_id == self.state.last_node_sequence_id)
+            .clone();
+
+        if order_last_node_index.is_none() == false {
+            // Get last node actions
+            let check_actions: Vec<protocol::vda_1_1_0::vda5050_1_1_0_action::Action> =
+                self.order.as_ref().unwrap().nodes[order_last_node_index.unwrap()]
+                    .actions
+                    .clone();
+
+            if check_actions.is_empty() == false {
+                // TODO: actions run in order
+                self.state.action_states.iter_mut().for_each(|action_state| {
+                    check_actions.iter().for_each(|check_action| {
+                        if action_state.action_id == check_action.action_id && action_state.action_status == protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting {
+                            println!("Action type: {:?}", action_state.action_type);
+                            action_state.action_status = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Finished;
+                            self.action_start_time = Some(chrono::Utc::now());
+                            return;
+                        }
+                    });
+                });
+            }
         }
+
         // Check vehicle position
         if self.state.agv_position.is_none() {
+            println!("2");
+            return;
+        }
+
+        // Remove last node
+        if self.state.node_states.len() == 1 {
+            self.state.node_states.remove(0);
+            return;
+        }
+
+        if self.state.node_states.len() == 0 {
             return;
         }
 
@@ -292,6 +344,10 @@ impl VehicleSimulator {
             return;
         }
 
+        if last_node_index.unwrap() > self.state.node_states.len() - 2 {
+            return;
+        }
+
         let next_node: protocol::vda_1_1_0::vda5050_1_1_0_state::NodeState =
             self.state.node_states[last_node_index.unwrap() + 1].clone();
 
@@ -302,11 +358,12 @@ impl VehicleSimulator {
             vehicle_position.y,
             next_node_position.x,
             next_node_position.y,
-            0.1,
+            self.config.settings.speed,
         );
 
         self.state.agv_position.as_mut().unwrap().x = updated_vehicle_position.0;
         self.state.agv_position.as_mut().unwrap().y = updated_vehicle_position.1;
+        self.state.agv_position.as_mut().unwrap().theta = updated_vehicle_position.2;
 
         self.visualization.agv_position = Some(self.state.agv_position.clone().unwrap());
 
@@ -317,7 +374,14 @@ impl VehicleSimulator {
             next_node_position.y,
         );
 
-        if distance_to_next_node < 0.1 {
+        if distance_to_next_node < 0.25 {
+            if self.state.node_states.is_empty() == false {
+                self.state.node_states.remove(0);
+            }
+            if self.state.edge_states.is_empty() == false {
+                self.state.edge_states.remove(0);
+            }
+
             self.state.last_node_id = next_node.node_id.clone();
             self.state.last_node_sequence_id = next_node.sequence_id.clone();
         }
@@ -368,18 +432,18 @@ async fn subscribe_vda_messages(config: config::Config, clone: Arc<Mutex<Vehicle
             }
 
             let topic = msg.topic();
-            println!("Topic: {:?}", topic);
-            // let payload = msg.payload();
-            // let message = String::from_utf8_lossy(payload).to_string();
-            // let robot_name = utils::get_robot_name(topic);
-            if utils::get_topic_name(topic) == "order" {
+            let topic_type = utils::get_topic_type(topic);
+            // TODO: change to match
+            if topic_type == "order" {
                 let payload = msg.payload();
                 let message = String::from_utf8_lossy(payload).to_string();
 
                 let order: protocol::vda_1_1_0::vda5050_1_1_0_order::Order =
                     serde_json::from_str(&message).unwrap();
-                clone.lock().await.order = Some(order);
-                clone.lock().await.order_accept_procedure();
+                // clone.lock().await.order = Some(order);
+                clone.lock().await.order_accept_procedure(order);
+            } else if topic_type == "instantActions" {
+                // TODO: handle instant actions
             }
         } else {
             // A "None" means we were disconnected. Try to reconnect...
@@ -423,7 +487,7 @@ async fn main() {
     let shared_vehicle_simulator = Arc::new(Mutex::new(vehicle_simulator));
     let clone_vehicle_simulator = Arc::clone(&shared_vehicle_simulator);
     let clone_vehicle_simulator_2 = Arc::clone(&shared_vehicle_simulator);
-    
+
     // Spawn tasks and collect their handles
     let vda_subscribe_handle = tokio::spawn(subscribe_vda_messages(
         clone_config,
@@ -433,5 +497,9 @@ async fn main() {
     let vda_publish_handle = tokio::spawn(publish_vda_messages(clone_vehicle_simulator));
 
     // Wait for both tasks to complete
-    let _ = tokio::try_join!(vda_subscribe_handle, vda_publish_handle);
+    let result = tokio::try_join!(vda_subscribe_handle, vda_publish_handle);
+
+    if let Err(err) = result {
+        println!("Error: {:?}", err);
+    }
 }
