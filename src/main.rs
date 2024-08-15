@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use paho_mqtt as mqtt;
+use protocol::vda_1_1_0::vda5050_1_1_0_action::ActionParameterValue;
 use std::option::Option;
 use std::sync::Arc;
 use std::{process, time::Duration};
@@ -20,6 +21,7 @@ struct VehicleSimulator {
     visualization: protocol::vda_1_1_0::vda5050_1_1_0_visualization::Visualization,
 
     order: Option<protocol::vda_1_1_0::vda5050_1_1_0_order::Order>,
+    instant_actions: Option<protocol::vda_1_1_0::vda5050_1_1_0_instant_actions::InstantActions>,
 
     config: config::Config,
     action_start_time: Option<DateTime<Utc>>,
@@ -55,7 +57,7 @@ impl VehicleSimulator {
                 y: 0.0,
                 position_initialized: true,
                 theta: 0.0,
-                map_id: String::from("webots"),
+                map_id: config.settings.map_id.clone(),
                 deviation_range: None,
                 map_description: None,
                 localization_score: None,
@@ -118,9 +120,57 @@ impl VehicleSimulator {
             visualization_topic,
             visualization,
             order: None,
+            instant_actions: None,
             action_start_time: None,
-            config: config,
+            config: config
         }
+    }
+
+    fn run_action(&mut self, action: protocol::vda_1_1_0::vda5050_1_1_0_action::Action) {
+        let action_state_index = self.state.action_states.iter().position(|x| x.action_id == action.action_id);
+        self.state.action_states[action_state_index.unwrap()].action_status = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Running;
+       
+        if action.action_type == "initPosition" {
+            let x: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "x").unwrap().value.clone();
+            let y: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "y").unwrap().value.clone();
+            let theta: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "theta").unwrap().value.clone();
+            let map_id: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "mapId").unwrap().value.clone();
+            
+            // TODO: create a function for code duplication
+            let x_float: f32 = match x {
+                ActionParameterValue::Float(float_value) => float_value,
+                _ => 0.0,
+            };
+            let y_float: f32 = match y {
+                ActionParameterValue::Float(float_value) => float_value,
+                _ => 0.0,
+            };
+            let theta_float: f32 = match theta {
+                ActionParameterValue::Float(float_value) => float_value,
+                _ => 0.0,
+            };
+
+            let map_id_string: String = match map_id {
+                ActionParameterValue::Str(string_value) => string_value,
+                _ => String::from(""),
+            };
+
+            self.state.agv_position = Some(protocol::vda5050_common::AgvPosition {
+                x: x_float,
+                y: y_float,
+                position_initialized: true,
+                theta: theta_float,
+                map_id: map_id_string,
+                deviation_range: None,
+                map_description: None,
+                localization_score: None,
+            });
+            self.visualization.agv_position = Some(self.state.agv_position.clone().unwrap());
+
+        }
+
+        self.state.action_states[action_state_index.unwrap()].action_status = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Finished;
+
     }
 
     async fn publish_connection(&mut self, mqtt_cli: &mqtt::AsyncClient) {
@@ -162,7 +212,35 @@ impl VehicleSimulator {
             .unwrap();
     }
 
-    fn order_accept_procedure(&mut self, order_request: protocol::vda_1_1_0::vda5050_1_1_0_order::Order) {
+    fn instant_actions_accept_procedure(
+        &mut self,
+        instant_action_request: protocol::vda_1_1_0::vda5050_1_1_0_instant_actions::InstantActions,
+    ) {
+        // TODO: Add validation
+
+        self.instant_actions = Some(instant_action_request);
+        // Add instant actions to action states of state
+        self.instant_actions
+            .as_ref()
+            .unwrap()
+            .instant_actions
+            .iter()
+            .for_each(|instant_action| {
+                let action_state = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionState {
+                    action_id: instant_action.action_id.clone(),
+                    action_status: protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting,
+                    action_type: Some(instant_action.action_type.clone()),
+                    result_description: None,
+                    action_description: None,
+                };
+                self.state.action_states.push(action_state);
+            });
+    }
+
+    fn order_accept_procedure(
+        &mut self,
+        order_request: protocol::vda_1_1_0::vda5050_1_1_0_order::Order,
+    ) {
         if order_request.order_id != self.state.order_id {
             // Empty string (""), if no previous orderId is available.
             if self.state.order_id == "" {
@@ -277,6 +355,18 @@ impl VehicleSimulator {
                     + self.config.settings.action_time as i64
         {
             return;
+        }
+
+        // Start instant action
+        if self.instant_actions.is_none() == false {
+            // Get instant actions
+            let instant_actions = self.instant_actions.as_ref().unwrap().instant_actions.clone();
+            for action in instant_actions {
+                let action_state = self.state.action_states.iter().find(|action_state| action_state.action_id == action.action_id);
+                if action_state.is_none() == false && action_state.unwrap().action_status == protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting {
+                    self.run_action(action.clone());
+                }
+            }
         }
 
         // Check order
@@ -439,10 +529,17 @@ async fn subscribe_vda_messages(config: config::Config, clone: Arc<Mutex<Vehicle
 
                 let order: protocol::vda_1_1_0::vda5050_1_1_0_order::Order =
                     serde_json::from_str(&message).unwrap();
-                // clone.lock().await.order = Some(order);
                 clone.lock().await.order_accept_procedure(order);
             } else if topic_type == "instantActions" {
-                // TODO: handle instant actions
+                let payload = msg.payload();
+                let message = String::from_utf8_lossy(payload).to_string();
+
+                let instant_actions: protocol::vda_1_1_0::vda5050_1_1_0_instant_actions::InstantActions =
+                serde_json::from_str(&message).unwrap();
+                clone
+                    .lock()
+                    .await
+                    .instant_actions_accept_procedure(instant_actions);
             }
         } else {
             // A "None" means we were disconnected. Try to reconnect...
@@ -455,7 +552,11 @@ async fn subscribe_vda_messages(config: config::Config, clone: Arc<Mutex<Vehicle
     }
 }
 
-async fn publish_vda_messages(clone: Arc<Mutex<VehicleSimulator>>, state_frequency: u64, visualization_frequency: u64) {
+async fn publish_vda_messages(
+    clone: Arc<Mutex<VehicleSimulator>>,
+    state_frequency: u64,
+    visualization_frequency: u64,
+) {
     let mqtt_cli = mqtt::AsyncClient::new(mqtt_utils::mqtt_create_opts()).unwrap_or_else(|e| {
         println!("Error on creating client: {:?}", e);
         process::exit(-1);
@@ -493,11 +594,12 @@ async fn publish_vda_messages(clone: Arc<Mutex<VehicleSimulator>>, state_frequen
 async fn main() {
     let config = crate::config::get_config();
 
-    for robot_index in 0..config.settings.robot_count  {
+    for robot_index in 0..config.settings.robot_count {
         // Clone generic config
         let mut vehicle_config = config.clone();
         // Rename robot serial number
-        vehicle_config.vehicle.serial_number = format!("{}{}",config.vehicle.serial_number, robot_index).to_string();
+        vehicle_config.vehicle.serial_number =
+            format!("{}{}", config.vehicle.serial_number, robot_index).to_string();
         let clone_vehicle_config = vehicle_config.clone();
 
         // Create vehicle simulator and clone it for async publish and subscribe
@@ -505,15 +607,19 @@ async fn main() {
         let shared_vehicle_simulator = Arc::new(Mutex::new(vehicle_simulator));
         let clone_vehicle_simulator = Arc::clone(&shared_vehicle_simulator);
         let clone_vehicle_simulator_2 = Arc::clone(&shared_vehicle_simulator);
-    
+
         // Subscribe vda messages
         tokio::spawn(subscribe_vda_messages(
             clone_vehicle_config,
             clone_vehicle_simulator_2,
         ));
-    
+
         // Publish vda messages
-        tokio::spawn(publish_vda_messages(clone_vehicle_simulator, config.settings.state_frequency, config.settings.visualization_frequency));
+        tokio::spawn(publish_vda_messages(
+            clone_vehicle_simulator,
+            config.settings.state_frequency,
+            config.settings.visualization_frequency,
+        ));
     }
 
     loop {

@@ -34,8 +34,19 @@ pub enum BlockingType {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionParameter {
-    ///  The key of the action parameter. For example. duration, direction, signal.
+    /// The key of the action parameter. For example, duration, direction, signal.
     pub key: String,
-    ///  The value of the action parameter. For example: 103.2, "left", true, [ 1, 2, 3].
-    pub value: String, // TODO: Check how to represent an `Any` type.
+    /// The value of the action parameter. For example: 103.2, "left", true, [1, 2, 3].
+    pub value: ActionParameterValue,
+}
+
+/// Enum to represent the possible types for the value of an action parameter.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum ActionParameterValue {
+    /// Represents an integer value.
+    Int(i32),
+    Float(f32),
+    /// Represents a string value.
+    Str(String),
 }

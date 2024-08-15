@@ -10,8 +10,9 @@ vda_version = "v2"
 vda_full_version = "2.0.0"
 
 [settings]
+map_id = "webots"
 state_frequency = 1
-visualization_frequency = 10 
+visualization_frequency = 5
 action_time = 1.0
 robot_count = 10
-speed = 0.04
+speed = 0.2

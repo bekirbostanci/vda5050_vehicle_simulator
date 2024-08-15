@@ -26,7 +26,8 @@ pub struct Settings {
     pub speed: f32,
     pub robot_count: u32,
     pub state_frequency: u64,
-    pub visualization_frequency: u64
+    pub visualization_frequency: u64,
+    pub map_id: String,
 }
 
 #[derive(Deserialize, Clone)]
