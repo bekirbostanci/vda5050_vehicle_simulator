@@ -131,6 +131,7 @@ impl VehicleSimulator {
             .await
             .unwrap();
 
+        // Wait for 1 second for connection message to be published
         tokio::time::sleep(Duration::from_millis(1000)).await;
 
         self.connection.header_id = self.connection.header_id + 1;
@@ -155,7 +156,6 @@ impl VehicleSimulator {
     async fn publish_state(&mut self, mqtt_cli: &mqtt::AsyncClient) {
         self.state.header_id = self.state.header_id + 1;
         self.state.timestamp = utils::get_timestamp();
-        self.state_iterate();
         let serialized = serde_json::to_string(&self.state).unwrap();
         mqtt_utils::mqtt_publish(mqtt_cli, &self.state_topic, &serialized)
             .await
@@ -317,7 +317,6 @@ impl VehicleSimulator {
 
         // Check vehicle position
         if self.state.agv_position.is_none() {
-            println!("2");
             return;
         }
 
@@ -374,7 +373,7 @@ impl VehicleSimulator {
             next_node_position.y,
         );
 
-        if distance_to_next_node < 0.25 {
+        if distance_to_next_node < self.config.settings.speed + 0.1 {
             if self.state.node_states.is_empty() == false {
                 self.state.node_states.remove(0);
             }
@@ -456,7 +455,7 @@ async fn subscribe_vda_messages(config: config::Config, clone: Arc<Mutex<Vehicle
     }
 }
 
-async fn publish_vda_messages(clone: Arc<Mutex<VehicleSimulator>>) {
+async fn publish_vda_messages(clone: Arc<Mutex<VehicleSimulator>>, state_frequency: u64, visualization_frequency: u64) {
     let mqtt_cli = mqtt::AsyncClient::new(mqtt_utils::mqtt_create_opts()).unwrap_or_else(|e| {
         println!("Error on creating client: {:?}", e);
         process::exit(-1);
@@ -469,37 +468,55 @@ async fn publish_vda_messages(clone: Arc<Mutex<VehicleSimulator>>) {
 
     clone.lock().await.publish_connection(&mqtt_cli).await;
 
+    let tick_time = 50;
+    let mut counter_state = 0;
+    let mut counter_visualization = 0;
     loop {
-        clone.lock().await.publish_state(&mqtt_cli).await;
+        clone.lock().await.state_iterate();
 
-        clone.lock().await.publish_visualization(&mqtt_cli).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        counter_state = counter_state + 1;
+        if counter_state * tick_time > 1000 / state_frequency {
+            counter_state = 0;
+            clone.lock().await.publish_state(&mqtt_cli).await;
+        }
+
+        counter_visualization = counter_visualization + 1;
+        if counter_visualization * tick_time > 1000 / visualization_frequency {
+            counter_visualization = 0;
+            clone.lock().await.publish_visualization(&mqtt_cli).await;
+        }
+        tokio::time::sleep(Duration::from_millis(tick_time)).await;
     }
 }
 
 #[tokio::main]
 async fn main() {
     let config = crate::config::get_config();
-    let clone_config = config.clone();
-    // tokio::spawn(mqtt_vda_message_subscriber());
 
-    let vehicle_simulator = VehicleSimulator::new(config);
-    let shared_vehicle_simulator = Arc::new(Mutex::new(vehicle_simulator));
-    let clone_vehicle_simulator = Arc::clone(&shared_vehicle_simulator);
-    let clone_vehicle_simulator_2 = Arc::clone(&shared_vehicle_simulator);
+    for robot_index in 0..config.settings.robot_count  {
+        // Clone generic config
+        let mut vehicle_config = config.clone();
+        // Rename robot serial number
+        vehicle_config.vehicle.serial_number = format!("{}{}",config.vehicle.serial_number, robot_index).to_string();
+        let clone_vehicle_config = vehicle_config.clone();
 
-    // Spawn tasks and collect their handles
-    let vda_subscribe_handle = tokio::spawn(subscribe_vda_messages(
-        clone_config,
-        clone_vehicle_simulator_2,
-    ));
+        // Create vehicle simulator and clone it for async publish and subscribe
+        let vehicle_simulator = VehicleSimulator::new(vehicle_config);
+        let shared_vehicle_simulator = Arc::new(Mutex::new(vehicle_simulator));
+        let clone_vehicle_simulator = Arc::clone(&shared_vehicle_simulator);
+        let clone_vehicle_simulator_2 = Arc::clone(&shared_vehicle_simulator);
+    
+        // Subscribe vda messages
+        tokio::spawn(subscribe_vda_messages(
+            clone_vehicle_config,
+            clone_vehicle_simulator_2,
+        ));
+    
+        // Publish vda messages
+        tokio::spawn(publish_vda_messages(clone_vehicle_simulator, config.settings.state_frequency, config.settings.visualization_frequency));
+    }
 
-    let vda_publish_handle = tokio::spawn(publish_vda_messages(clone_vehicle_simulator));
-
-    // Wait for both tasks to complete
-    let result = tokio::try_join!(vda_subscribe_handle, vda_publish_handle);
-
-    if let Err(err) = result {
-        println!("Error: {:?}", err);
+    loop {
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }

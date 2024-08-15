@@ -24,6 +24,9 @@ pub struct VehicleConfig {
 pub struct Settings {
     pub action_time: f32,
     pub speed: f32,
+    pub robot_count: u32,
+    pub state_frequency: u64,
+    pub visualization_frequency: u64
 }
 
 #[derive(Deserialize, Clone)]

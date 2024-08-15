@@ -4,13 +4,14 @@ port = "1883"
 vda_interface = "uagv"
 
 [vehicle]
-serial_number = "s23"
+serial_number = "s1"
 manufacturer = "rikeb"
 vda_version = "v2"
 vda_full_version = "2.0.0"
 
 [settings]
-state_frequency = 1.0
-visualization_frequency = 5.0 
+state_frequency = 1
+visualization_frequency = 10 
 action_time = 1.0
-speed = 0.2
+robot_count = 10
+speed = 0.04
