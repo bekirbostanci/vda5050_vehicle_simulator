@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::option::Option;
 
-use crate::protocol::vda_1_1_0::vda5050_1_1_0_action::Action;
+use crate::protocol::vda_2_0_0::vda5050_2_0_0_action::Action;
 use crate::protocol::vda5050_common::{HeaderId, NodePosition, Trajectory};
 
 /// An order to be communicated from master control to the AGV.

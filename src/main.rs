@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use paho_mqtt as mqtt;
-use protocol::vda_1_1_0::vda5050_1_1_0_action::ActionParameterValue;
+use protocol::vda_2_0_0::vda5050_2_0_0_action::ActionParameterValue;
 use std::option::Option;
 use std::sync::Arc;
 use std::{process, time::Duration};
@@ -14,14 +14,14 @@ mod utils;
 
 struct VehicleSimulator {
     connection_topic: String,
-    connection: protocol::vda_1_1_0::vda5050_1_1_0_connection::Connection,
+    connection: protocol::vda_2_0_0::vda5050_2_0_0_connection::Connection,
     state_topic: String,
-    state: protocol::vda_1_1_0::vda5050_1_1_0_state::State,
+    state: protocol::vda_2_0_0::vda5050_2_0_0_state::State,
     visualization_topic: String,
-    visualization: protocol::vda_1_1_0::vda5050_1_1_0_visualization::Visualization,
+    visualization: protocol::vda_2_0_0::vda5050_2_0_0_visualization::Visualization,
 
-    order: Option<protocol::vda_1_1_0::vda5050_1_1_0_order::Order>,
-    instant_actions: Option<protocol::vda_1_1_0::vda5050_1_1_0_instant_actions::InstantActions>,
+    order: Option<protocol::vda_2_0_0::vda5050_2_0_0_order::Order>,
+    instant_actions: Option<protocol::vda_2_0_0::vda5050_2_0_0_instant_actions::InstantActions>,
 
     config: config::Config,
     action_start_time: Option<DateTime<Utc>>,
@@ -39,22 +39,24 @@ impl VehicleSimulator {
         // Connection
         let connection_topic = format!("{}/connection", base_topic);
 
-        let connection = protocol::vda_1_1_0::vda5050_1_1_0_connection::Connection {
+        let connection = protocol::vda_2_0_0::vda5050_2_0_0_connection::Connection {
             header_id: 0,
             timestamp: utils::get_timestamp(),
             version: String::from(&config.vehicle.vda_full_version),
             manufacturer: String::from(&config.vehicle.manufacturer),
             serial_number: String::from(&config.vehicle.serial_number),
             connection_state:
-                protocol::vda_1_1_0::vda5050_1_1_0_connection::ConnectionState::ConnectionBroken,
+                protocol::vda_2_0_0::vda5050_2_0_0_connection::ConnectionState::ConnectionBroken,
         };
 
         // State
         let state_topic = format!("{}/state", base_topic);
+        let random_x = rand::random::<f32>() * 5.0 - 2.5;
+        let random_y = rand::random::<f32>() * 5.0 - 2.5;
         let agv_position: protocol::vda5050_common::AgvPosition =
             protocol::vda5050_common::AgvPosition {
-                x: 0.0,
-                y: 0.0,
+                x: random_x,
+                y: random_y,
                 position_initialized: true,
                 theta: 0.0,
                 map_id: config.settings.map_id.clone(),
@@ -63,7 +65,7 @@ impl VehicleSimulator {
                 localization_score: None,
             };
 
-        let state = protocol::vda_1_1_0::vda5050_1_1_0_state::State {
+        let state = protocol::vda_2_0_0::vda5050_2_0_0_state::State {
             header_id: 0,
             timestamp: utils::get_timestamp(),
             version: String::from(&config.vehicle.vda_full_version),
@@ -71,7 +73,7 @@ impl VehicleSimulator {
             serial_number: String::from(&config.vehicle.serial_number),
             driving: false,
             distance_since_last_node: None,
-            operating_mode: protocol::vda_1_1_0::vda5050_1_1_0_state::OperatingMode::Automatic,
+            operating_mode: protocol::vda_2_0_0::vda5050_2_0_0_state::OperatingMode::Automatic,
             node_states: vec![],
             edge_states: vec![],
             last_node_id: String::from(""),
@@ -82,15 +84,15 @@ impl VehicleSimulator {
             information: vec![],
             loads: vec![],
             errors: vec![],
-            battery_state: protocol::vda_1_1_0::vda5050_1_1_0_state::BatteryState {
+            battery_state: protocol::vda_2_0_0::vda5050_2_0_0_state::BatteryState {
                 battery_charge: 0.0,
                 battery_voltage: None,
                 battery_health: None,
                 charging: false,
                 reach: None,
             },
-            safety_state: protocol::vda_1_1_0::vda5050_1_1_0_state::SafetyState {
-                e_stop: protocol::vda_1_1_0::vda5050_1_1_0_state::EStop::None,
+            safety_state: protocol::vda_2_0_0::vda5050_2_0_0_state::SafetyState {
+                e_stop: protocol::vda_2_0_0::vda5050_2_0_0_state::EStop::None,
                 field_violation: false,
             },
             paused: None,
@@ -102,7 +104,7 @@ impl VehicleSimulator {
 
         // Visualization
         let visualization_topic = format!("{}/visualization", base_topic);
-        let visualization = protocol::vda_1_1_0::vda5050_1_1_0_visualization::Visualization {
+        let visualization = protocol::vda_2_0_0::vda5050_2_0_0_visualization::Visualization {
             header_id: 0,
             timestamp: utils::get_timestamp(),
             version: String::from(&config.vehicle.vda_full_version),
@@ -126,9 +128,9 @@ impl VehicleSimulator {
         }
     }
 
-    fn run_action(&mut self, action: protocol::vda_1_1_0::vda5050_1_1_0_action::Action) {
+    fn run_action(&mut self, action: protocol::vda_2_0_0::vda5050_2_0_0_action::Action) {
         let action_state_index = self.state.action_states.iter().position(|x| x.action_id == action.action_id);
-        self.state.action_states[action_state_index.unwrap()].action_status = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Running;
+        self.state.action_states[action_state_index.unwrap()].action_status = protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Running;
        
         if action.action_type == "initPosition" {
             let x: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "x").unwrap().value.clone();
@@ -169,7 +171,7 @@ impl VehicleSimulator {
 
         }
 
-        self.state.action_states[action_state_index.unwrap()].action_status = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Finished;
+        self.state.action_states[action_state_index.unwrap()].action_status = protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Finished;
 
     }
 
@@ -187,7 +189,7 @@ impl VehicleSimulator {
         self.connection.header_id = self.connection.header_id + 1;
         self.connection.timestamp = utils::get_timestamp();
         self.connection.connection_state =
-            protocol::vda_1_1_0::vda5050_1_1_0_connection::ConnectionState::Online;
+            protocol::vda_2_0_0::vda5050_2_0_0_connection::ConnectionState::Online;
         let json_connection_online = serde_json::to_string(&self.connection).unwrap();
         mqtt_utils::mqtt_publish(mqtt_cli, &self.connection_topic, &json_connection_online)
             .await
@@ -214,7 +216,7 @@ impl VehicleSimulator {
 
     fn instant_actions_accept_procedure(
         &mut self,
-        instant_action_request: protocol::vda_1_1_0::vda5050_1_1_0_instant_actions::InstantActions,
+        instant_action_request: protocol::vda_2_0_0::vda5050_2_0_0_instant_actions::InstantActions,
     ) {
         // TODO: Add validation
 
@@ -226,9 +228,9 @@ impl VehicleSimulator {
             .instant_actions
             .iter()
             .for_each(|instant_action| {
-                let action_state = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionState {
+                let action_state = protocol::vda_2_0_0::vda5050_2_0_0_state::ActionState {
                     action_id: instant_action.action_id.clone(),
-                    action_status: protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting,
+                    action_status: protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Waiting,
                     action_type: Some(instant_action.action_type.clone()),
                     result_description: None,
                     action_description: None,
@@ -239,7 +241,7 @@ impl VehicleSimulator {
 
     fn order_accept_procedure(
         &mut self,
-        order_request: protocol::vda_1_1_0::vda5050_1_1_0_order::Order,
+        order_request: protocol::vda_2_0_0::vda5050_2_0_0_order::Order,
     ) {
         if order_request.order_id != self.state.order_id {
             // Empty string (""), if no previous orderId is available.
@@ -249,7 +251,6 @@ impl VehicleSimulator {
             }
 
             // TODO: check action states
-            // self.state.action_states.iter().all(|action_state| action_state.action_status != protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Finished);
             if self.state.node_states.len() == 0 && self.state.edge_states.len() == 0 {
                 // Delete action states
                 self.state.action_states = vec![];
@@ -277,7 +278,7 @@ impl VehicleSimulator {
         }
     }
 
-    fn order_accept(&mut self, order_request: protocol::vda_1_1_0::vda5050_1_1_0_order::Order) {
+    fn order_accept(&mut self, order_request: protocol::vda_2_0_0::vda5050_2_0_0_order::Order) {
         // Check order
         println!("Order accept: {}", self.state.order_id);
         self.order = Some(order_request);
@@ -297,7 +298,7 @@ impl VehicleSimulator {
         // Set edgeStates
         // Set actionStates
         for node in &self.order.as_ref().unwrap().nodes {
-            let node_state = protocol::vda_1_1_0::vda5050_1_1_0_state::NodeState {
+            let node_state = protocol::vda_2_0_0::vda5050_2_0_0_state::NodeState {
                 node_id: node.node_id.clone(),
                 sequence_id: node.sequence_id.clone(),
                 released: node.released.clone(),
@@ -307,12 +308,12 @@ impl VehicleSimulator {
             self.state.node_states.push(node_state);
 
             for action in &node.actions {
-                let action: protocol::vda_1_1_0::vda5050_1_1_0_action::Action = action.clone();
-                let action_state = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionState {
+                let action: protocol::vda_2_0_0::vda5050_2_0_0_action::Action = action.clone();
+                let action_state = protocol::vda_2_0_0::vda5050_2_0_0_state::ActionState {
                     action_id: action.action_id.clone(),
                     action_type: Some(action.action_type.clone()),
                     action_description: action.action_description.clone(),
-                    action_status: protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting,
+                    action_status: protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Waiting,
                     result_description: None,
                 };
                 self.state.action_states.push(action_state);
@@ -320,7 +321,7 @@ impl VehicleSimulator {
         }
 
         for edge in &self.order.as_ref().unwrap().edges {
-            let edge_state = protocol::vda_1_1_0::vda5050_1_1_0_state::EdgeState {
+            let edge_state = protocol::vda_2_0_0::vda5050_2_0_0_state::EdgeState {
                 edge_id: edge.edge_id.clone(),
                 sequence_id: edge.sequence_id.clone(),
                 released: edge.released.clone(),
@@ -330,12 +331,12 @@ impl VehicleSimulator {
             self.state.edge_states.push(edge_state);
 
             for action in &edge.actions {
-                let action: protocol::vda_1_1_0::vda5050_1_1_0_action::Action = action.clone();
-                let action_state = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionState {
+                let action: protocol::vda_2_0_0::vda5050_2_0_0_action::Action = action.clone();
+                let action_state = protocol::vda_2_0_0::vda5050_2_0_0_state::ActionState {
                     action_id: action.action_id.clone(),
                     action_type: Some(action.action_type.clone()),
                     action_description: action.action_description.clone(),
-                    action_status: protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting,
+                    action_status: protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Waiting,
                     result_description: None,
                 };
                 self.state.action_states.push(action_state);
@@ -363,7 +364,7 @@ impl VehicleSimulator {
             let instant_actions = self.instant_actions.as_ref().unwrap().instant_actions.clone();
             for action in instant_actions {
                 let action_state = self.state.action_states.iter().find(|action_state| action_state.action_id == action.action_id);
-                if action_state.is_none() == false && action_state.unwrap().action_status == protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting {
+                if action_state.is_none() == false && action_state.unwrap().action_status == protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Waiting {
                     self.run_action(action.clone());
                 }
             }
@@ -385,7 +386,7 @@ impl VehicleSimulator {
 
         if order_last_node_index.is_none() == false {
             // Get last node actions
-            let check_actions: Vec<protocol::vda_1_1_0::vda5050_1_1_0_action::Action> =
+            let check_actions: Vec<protocol::vda_2_0_0::vda5050_2_0_0_action::Action> =
                 self.order.as_ref().unwrap().nodes[order_last_node_index.unwrap()]
                     .actions
                     .clone();
@@ -394,9 +395,9 @@ impl VehicleSimulator {
                 // TODO: actions run in order
                 self.state.action_states.iter_mut().for_each(|action_state| {
                     check_actions.iter().for_each(|check_action| {
-                        if action_state.action_id == check_action.action_id && action_state.action_status == protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Waiting {
+                        if action_state.action_id == check_action.action_id && action_state.action_status == protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Waiting {
                             println!("Action type: {:?}", action_state.action_type);
-                            action_state.action_status = protocol::vda_1_1_0::vda5050_1_1_0_state::ActionStatus::Finished;
+                            action_state.action_status = protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Finished;
                             self.action_start_time = Some(chrono::Utc::now());
                             return;
                         }
@@ -437,7 +438,7 @@ impl VehicleSimulator {
             return;
         }
 
-        let next_node: protocol::vda_1_1_0::vda5050_1_1_0_state::NodeState =
+        let next_node: protocol::vda_2_0_0::vda5050_2_0_0_state::NodeState =
             self.state.node_states[last_node_index.unwrap() + 1].clone();
 
         let next_node_position: protocol::vda5050_common::NodePosition =
@@ -527,14 +528,14 @@ async fn subscribe_vda_messages(config: config::Config, clone: Arc<Mutex<Vehicle
                 let payload = msg.payload();
                 let message = String::from_utf8_lossy(payload).to_string();
 
-                let order: protocol::vda_1_1_0::vda5050_1_1_0_order::Order =
+                let order: protocol::vda_2_0_0::vda5050_2_0_0_order::Order =
                     serde_json::from_str(&message).unwrap();
                 clone.lock().await.order_accept_procedure(order);
             } else if topic_type == "instantActions" {
                 let payload = msg.payload();
                 let message = String::from_utf8_lossy(payload).to_string();
 
-                let instant_actions: protocol::vda_1_1_0::vda5050_1_1_0_instant_actions::InstantActions =
+                let instant_actions: protocol::vda_2_0_0::vda5050_2_0_0_instant_actions::InstantActions =
                 serde_json::from_str(&message).unwrap();
                 clone
                     .lock()

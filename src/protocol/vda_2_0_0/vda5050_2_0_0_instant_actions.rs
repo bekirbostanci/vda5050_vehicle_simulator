@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::vda_1_1_0::vda5050_1_1_0_action::Action;
+use crate::protocol::vda_2_0_0::vda5050_2_0_0_action::Action;
 use crate::protocol::vda5050_common::HeaderId;
 
 /// Instant actions that the AGV is to execute as soon as they arrive.
