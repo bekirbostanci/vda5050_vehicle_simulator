@@ -137,7 +137,8 @@ impl VehicleSimulator {
             let y: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "y").unwrap().value.clone();
             let theta: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "theta").unwrap().value.clone();
             let map_id: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "mapId").unwrap().value.clone();
-            
+            let last_node_id: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "lastNodeId").unwrap().value.clone();
+           
             // TODO: create a function for code duplication
             let x_float: f32 = match x {
                 ActionParameterValue::Float(float_value) => float_value,
@@ -157,6 +158,11 @@ impl VehicleSimulator {
                 _ => String::from(""),
             };
 
+            let last_node_id: String = match last_node_id {
+                ActionParameterValue::Str(string_value) => string_value,
+                _ => String::from(""),
+            };
+
             self.state.agv_position = Some(protocol::vda5050_common::AgvPosition {
                 x: x_float,
                 y: y_float,
@@ -167,6 +173,7 @@ impl VehicleSimulator {
                 map_description: None,
                 localization_score: None,
             });
+            self.state.last_node_id = last_node_id.clone();
             self.visualization.agv_position = Some(self.state.agv_position.clone().unwrap());
 
         }
