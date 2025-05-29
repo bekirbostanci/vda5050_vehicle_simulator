@@ -418,9 +418,45 @@ impl VehicleSimulator {
             return;
         }
 
-        // Remove last node
+        // Handle last node
         if self.state.node_states.len() == 1 {
-            self.state.node_states.remove(0);
+            let last_node = &self.state.node_states[0];
+            let last_node_position = last_node.node_position.as_ref().unwrap();
+            let vehicle_position = self.state.agv_position.as_ref().unwrap();
+            
+            let distance_to_last_node = utils::get_distance(
+                vehicle_position.x,
+                vehicle_position.y,
+                last_node_position.x,
+                last_node_position.y,
+            );
+
+            if distance_to_last_node < self.config.settings.speed + 0.1 {
+                // Jump to exact position
+                self.state.agv_position.as_mut().unwrap().x = last_node_position.x;
+                self.state.agv_position.as_mut().unwrap().y = last_node_position.y;
+                self.state.agv_position.as_mut().unwrap().theta = last_node_position.theta.unwrap_or(0.0);
+                self.visualization.agv_position = Some(self.state.agv_position.clone().unwrap());
+                
+                // Remove the node after reaching exact position
+                self.state.node_states.remove(0);
+                return;
+            }
+
+            // Move towards the last node
+            let updated_vehicle_position = utils::iterate_position(
+                vehicle_position.x,
+                vehicle_position.y,
+                last_node_position.x,
+                last_node_position.y,
+                self.config.settings.speed,
+            );
+
+            self.state.agv_position.as_mut().unwrap().x = updated_vehicle_position.0;
+            self.state.agv_position.as_mut().unwrap().y = updated_vehicle_position.1;
+            self.state.agv_position.as_mut().unwrap().theta = updated_vehicle_position.2;
+
+            self.visualization.agv_position = Some(self.state.agv_position.clone().unwrap());
             return;
         }
 
