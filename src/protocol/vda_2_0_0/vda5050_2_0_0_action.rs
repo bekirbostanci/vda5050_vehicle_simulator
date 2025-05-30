@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Node Action Object
 #[serde_with::skip_serializing_none]
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Action {
     ///  Name of action as described in the first column of "Actions and Parameters" Identifies the function of the action.
@@ -14,11 +14,11 @@ pub struct Action {
     ///  Regulates if the action is allowed to be executed during movement and/or parallel to other actions.
     pub blocking_type: BlockingType,
     ///  Array of actionParameter objects for the indicated action e.g. deviceId, loadId, external triggers.
-    pub action_parameters: Vec<ActionParameter>,
+    pub action_parameters: Option<Vec<ActionParameter>>,
 }
 
 /// Regulates if the action is allowed to be executed during movement and/or parallel to other actions.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BlockingType {
     /// Action can happen in parallel with others, including movement.
@@ -31,7 +31,7 @@ pub enum BlockingType {
 
 /// ActionParameter Object
 #[serde_with::skip_serializing_none]
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionParameter {
     /// The key of the action parameter. For example, duration, direction, signal.

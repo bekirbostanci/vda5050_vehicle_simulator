@@ -19,5 +19,5 @@ pub struct InstantActions {
     /// Serial number of the AGV
     pub serial_number: String,
     /// Array of actions that need to be performed immediately and are not part of the regular order.
-    pub instant_actions: Vec<Action>
+    pub actions: Vec<Action>
 }

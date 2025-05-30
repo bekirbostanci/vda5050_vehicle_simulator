@@ -57,7 +57,7 @@ impl VehicleSimulator {
             protocol::vda5050_common::AgvPosition {
                 x: random_x,
                 y: random_y,
-                position_initialized: true,
+                position_initialized: false,
                 theta: 0.0,
                 map_id: config.settings.map_id.clone(),
                 deviation_range: None,
@@ -85,7 +85,7 @@ impl VehicleSimulator {
             loads: vec![],
             errors: vec![],
             battery_state: protocol::vda_2_0_0::vda5050_2_0_0_state::BatteryState {
-                battery_charge: 0.0,
+                battery_charge: 100.0,
                 battery_voltage: None,
                 battery_health: None,
                 charging: false,
@@ -133,23 +133,55 @@ impl VehicleSimulator {
         self.state.action_states[action_state_index.unwrap()].action_status = protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Running;
        
         if action.action_type == "initPosition" {
-            let x: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "x").unwrap().value.clone();
-            let y: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "y").unwrap().value.clone();
-            let theta: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "theta").unwrap().value.clone();
-            let map_id: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "mapId").unwrap().value.clone();
-            let last_node_id: ActionParameterValue = action.action_parameters.iter().find(|x| x.key == "lastNodeId").unwrap().value.clone();
-           
+            println!("Init position action");
+            // Check is there action parameters
+            let x: ActionParameterValue = action.action_parameters.as_ref()
+            .and_then(|params| params.iter().find(|x| x.key == "x"))
+            .map(|param| param.value.clone())
+            .unwrap(); // or handle the None case properly
+        
+        let y: ActionParameterValue = action.action_parameters.as_ref()
+            .and_then(|params| params.iter().find(|x| x.key == "y"))
+            .map(|param| param.value.clone())
+            .unwrap(); // or handle the None case properly
+        
+        let theta: ActionParameterValue = action.action_parameters.as_ref()
+            .and_then(|params| params.iter().find(|x| x.key == "theta"))
+            .map(|param| param.value.clone())
+            .unwrap(); // or handle the None case properly
+        
+        let map_id: ActionParameterValue = action.action_parameters.as_ref()
+            .and_then(|params| params.iter().find(|x| x.key == "mapId"))
+            .map(|param| param.value.clone())
+            .unwrap(); // or handle the None case properly
+        
+        let last_node_id: ActionParameterValue = action.action_parameters.as_ref()
+            .and_then(|params| params.iter().find(|x| x.key == "lastNodeId"))
+            .map(|param| param.value.clone())
+            .unwrap(); // or handle the None case properly
+        
             // TODO: create a function for code duplication
             let x_float: f32 = match x {
-                ActionParameterValue::Float(float_value) => float_value,
+                ActionParameterValue::Str(s) => s.parse::<f32>().unwrap(),
+                ActionParameterValue::Float(f) => f,
                 _ => 0.0,
             };
+
             let y_float: f32 = match y {
-                ActionParameterValue::Float(float_value) => float_value,
+                ActionParameterValue::Str(s) => s.parse::<f32>().unwrap(),
+                ActionParameterValue::Float(f) => f,
                 _ => 0.0,
             };
+            
             let theta_float: f32 = match theta {
-                ActionParameterValue::Float(float_value) => float_value,
+                ActionParameterValue::Str(s) => match s.parse::<f32>() {
+                    Ok(f) => f,
+                    Err(_) => {
+                        println!("Error parsing theta string value: {}", s);
+                        0.0
+                    }
+                },
+                ActionParameterValue::Float(f) => f,
                 _ => 0.0,
             };
 
@@ -232,7 +264,7 @@ impl VehicleSimulator {
         self.instant_actions
             .as_ref()
             .unwrap()
-            .instant_actions
+            .actions
             .iter()
             .for_each(|instant_action| {
                 let action_state = protocol::vda_2_0_0::vda5050_2_0_0_state::ActionState {
@@ -251,14 +283,33 @@ impl VehicleSimulator {
         order_request: protocol::vda_2_0_0::vda5050_2_0_0_order::Order,
     ) {
         if order_request.order_id != self.state.order_id {
-            // Empty string (""), if no previous orderId is available.
-            if self.state.order_id == "" {
-                self.order_accept(order_request);
+            // Check if there are any unreleased nodes in the current state
+            let has_unreleased_nodes = self.state.node_states.iter().any(|node| !node.released);
+            if has_unreleased_nodes && self.state.node_states[0].sequence_id != self.state.last_node_sequence_id {
+                self.order_reject("Vehicle has not arrived at the latest released node".to_string());
                 return;
             }
 
+            // Check if vehicle is close enough to last released node
+            if let Some(last_released_node) = self.state.node_states.iter().find(|node| node.released) {
+                if let Some(node_position) = &last_released_node.node_position {
+                    if let Some(vehicle_position) = &self.state.agv_position {
+                        let distance = utils::get_distance(
+                            vehicle_position.x,
+                            vehicle_position.y,
+                            node_position.x,
+                            node_position.y,
+                        );
+                        if distance > 0.1 {
+                            self.order_reject("Vehicle is not close enough to last released node".to_string());
+                            return;
+                        }
+                    }
+                }
+            }
+
             // TODO: check action states
-            if self.state.node_states.len() == 0 && self.state.edge_states.len() == 0 {
+            if self.state.node_states.len() == 0 && self.state.edge_states.len() == 0 && self.state.agv_position.as_ref().map_or(false, |pos| pos.position_initialized) {
                 // Delete action states
                 self.state.action_states = vec![];
                 self.order_accept(order_request);
@@ -269,15 +320,35 @@ impl VehicleSimulator {
             }
         } else {
             if order_request.order_update_id > self.state.order_update_id {
-                if self.state.node_states.is_empty() == false && self.state.edge_states.is_empty() {
-                    // Delete action states
-                    self.state.action_states = vec![];
-                    self.order_accept(order_request);
-                    return;
-                } else {
-                    self.order_reject("There is order_state or edge_state in state1".to_string());
+                // Check if there are any unreleased nodes in the current state
+                let has_unreleased_nodes = self.state.node_states.iter().any(|node| !node.released);
+                if has_unreleased_nodes && self.state.node_states[0].sequence_id != self.state.last_node_sequence_id { 
+                    self.order_reject("Vehicle has not arrived at the latest released node".to_string());
                     return;
                 }
+
+                // Check if vehicle is close enough to last released node
+                if let Some(last_released_node) = self.state.node_states.iter().find(|node| node.released) {
+                    if let Some(node_position) = &last_released_node.node_position {
+                        if let Some(vehicle_position) = &self.state.agv_position {
+                            let distance = utils::get_distance(
+                                vehicle_position.x,
+                                vehicle_position.y,
+                                node_position.x,
+                                node_position.y,
+                            );
+                            if distance > 0.1 {
+                                self.order_reject("Vehicle is not close enough to last released node".to_string());
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                // Delete action states
+                self.state.action_states = vec![];
+                self.order_accept(order_request);
+                return;
             } else {
                 self.order_reject("Order update id is lower".to_string());
                 return;
@@ -292,9 +363,12 @@ impl VehicleSimulator {
 
         // Set orderId
         // Set orderUpdateId
-        self.state.last_node_sequence_id = 0;
+        // self.state.last_node_sequence_id = 0;
         self.state.order_id = self.order.as_ref().unwrap().order_id.clone();
         self.state.order_update_id = self.order.as_ref().unwrap().order_update_id;
+        if self.state.order_update_id == 0{
+            self.state.last_node_sequence_id = 0;
+        }
 
         // Delete old action states
         self.state.action_states = vec![];
@@ -368,7 +442,7 @@ impl VehicleSimulator {
         // Start instant action
         if self.instant_actions.is_none() == false {
             // Get instant actions
-            let instant_actions = self.instant_actions.as_ref().unwrap().instant_actions.clone();
+            let instant_actions = self.instant_actions.as_ref().unwrap().actions.clone();
             for action in instant_actions {
                 let action_state = self.state.action_states.iter().find(|action_state| action_state.action_id == action.action_id);
                 if action_state.is_none() == false && action_state.unwrap().action_status == protocol::vda_2_0_0::vda5050_2_0_0_state::ActionStatus::Waiting {
@@ -428,13 +502,29 @@ impl VehicleSimulator {
             return;
         }
 
-        let vehicle_position: protocol::vda5050_common::AgvPosition =
-            self.state.agv_position.clone().unwrap();
-        let last_node_index = self
+        let mut last_node_index = self
             .state
             .node_states
             .iter()
             .position(|node_state| node_state.sequence_id == self.state.last_node_sequence_id);
+
+        // use next node state sequnce 
+        if last_node_index.is_none() {
+            // use last_node_sequence_id + 2 
+            last_node_index = Some(0);
+        }
+
+
+        let next_node: protocol::vda_2_0_0::vda5050_2_0_0_state::NodeState =
+            self.state.node_states[last_node_index.unwrap() + 1].clone();
+        
+        if next_node.released == false {
+            return;
+        }
+
+        let vehicle_position: protocol::vda5050_common::AgvPosition =
+            self.state.agv_position.clone().unwrap();
+
 
         // Last node is not found
         if last_node_index.is_none() {
@@ -445,8 +535,6 @@ impl VehicleSimulator {
             return;
         }
 
-        let next_node: protocol::vda_2_0_0::vda5050_2_0_0_state::NodeState =
-            self.state.node_states[last_node_index.unwrap() + 1].clone();
 
         let next_node_position: protocol::vda5050_common::NodePosition =
             next_node.node_position.unwrap();
@@ -607,7 +695,7 @@ async fn main() {
         let mut vehicle_config = config.clone();
         // Rename robot serial number
         vehicle_config.vehicle.serial_number =
-            format!("{}{}", config.vehicle.serial_number, robot_index).to_string();
+            format!("{}{}", config.vehicle.serial_number, robot_index+1).to_string();
         let clone_vehicle_config = vehicle_config.clone();
 
         // Create vehicle simulator and clone it for async publish and subscribe
