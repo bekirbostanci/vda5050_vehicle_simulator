@@ -273,10 +273,6 @@ fn iterate_position_with_straight_line(current_x: f32, current_y: f32, target_x:
         0.0
     };
     
-    // Calculate the current position on the line
-    let line_x = start_x + t * (end_x - start_x);
-    let line_y = start_y + t * (end_y - start_y);
-    
     // Calculate how far to move along the line
     let distance_to_move = speed;
     let new_t = (t + distance_to_move / line_length).min(1.0);
