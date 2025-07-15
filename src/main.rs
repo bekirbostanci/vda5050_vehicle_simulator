@@ -407,7 +407,7 @@ impl VehicleSimulator {
                 sequence_id: edge.sequence_id.clone(),
                 released: edge.released.clone(),
                 edge_description: edge.edge_description.clone(),
-                trajectory: None,
+                trajectory: edge.trajectory.clone(),
             };
             self.state.edge_states.push(edge_state);
 
@@ -538,13 +538,27 @@ impl VehicleSimulator {
 
         let next_node_position: protocol::vda5050_common::NodePosition =
             next_node.node_position.unwrap();
-        let updated_vehicle_position = utils::iterate_position(
-            vehicle_position.x,
-            vehicle_position.y,
-            next_node_position.x,
-            next_node_position.y,
-            self.config.settings.speed,
-        );
+
+        let next_edge = self.state.edge_states.iter().find(|edge| edge.sequence_id == next_node.sequence_id - 1);
+        let updated_vehicle_position = if next_edge.is_some() {
+            let next_edge_trajectory: protocol::vda5050_common::Trajectory = next_edge.unwrap().trajectory.clone().unwrap();
+            utils::iterate_position_with_trajectory(
+                vehicle_position.x,
+                vehicle_position.y,
+                next_node_position.x,
+                next_node_position.y,
+                self.config.settings.speed,
+                next_edge_trajectory,
+            )
+        } else {
+            utils::iterate_position(
+                vehicle_position.x,
+                vehicle_position.y,
+                next_node_position.x,
+                next_node_position.y,
+                self.config.settings.speed,
+            )
+        };
 
         self.state.agv_position.as_mut().unwrap().x = updated_vehicle_position.0;
         self.state.agv_position.as_mut().unwrap().y = updated_vehicle_position.1;
