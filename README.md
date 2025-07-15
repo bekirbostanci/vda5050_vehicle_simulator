@@ -8,6 +8,7 @@ This project is a VDA5050-compliant robot simulator written in Rust. It simulate
 - Communicates with a broker via MQTT.
 - Configurable vehicle, map, and simulator settings.
 - Supports visualization updates and actions.
+- Support trajectory
 
 ## Configuration
 
