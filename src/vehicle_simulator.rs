@@ -18,9 +18,9 @@ pub struct VehicleSimulator {
     connection_topic: String,
     connection: Connection,
     state_topic: String,
-    state: State,
+    pub state: State,
     visualization_topic: String,
-    visualization: Visualization,
+    pub visualization: Visualization,
 
     order: Option<Order>,
     instant_actions: Option<InstantActions>,
@@ -335,7 +335,7 @@ impl VehicleSimulator {
         true
     }
 
-    fn is_vehicle_ready_for_new_order(&self) -> bool {
+    pub fn is_vehicle_ready_for_new_order(&self) -> bool {
         self.state.node_states.is_empty() 
             && self.state.edge_states.is_empty() 
             && self.state.agv_position.as_ref().map_or(false, |pos| pos.position_initialized)
@@ -443,7 +443,7 @@ impl VehicleSimulator {
         }
     }
 
-    fn process_instant_actions(&mut self) {
+    pub fn process_instant_actions(&mut self) {
         if let Some(instant_actions) = &self.instant_actions {
             let actions = instant_actions.actions.clone();
             for action in actions {

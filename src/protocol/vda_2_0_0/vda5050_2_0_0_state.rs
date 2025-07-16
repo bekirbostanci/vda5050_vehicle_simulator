@@ -107,7 +107,7 @@ pub struct ActionState {
 }
 
 /// Status of an Action.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 #[derive(Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ActionStatus {
