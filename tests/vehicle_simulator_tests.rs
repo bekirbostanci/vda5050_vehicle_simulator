@@ -372,4 +372,564 @@ fn test_action_state_management() {
     // Verify action state was updated
     let action_state = &simulator.state.action_states[0];
     assert_eq!(action_state.action_status, ActionStatus::Finished);
+}
+
+fn create_pick_action(load_id: &str, load_type: &str, weight: f32) -> Action {
+    Action {
+        action_type: "pick".to_string(),
+        action_id: format!("pick_{}", load_id),
+        action_description: Some(format!("Pick load {}", load_id)),
+        blocking_type: BlockingType::Hard,
+        action_parameters: Some(vec![
+            ActionParameter {
+                key: "loadId".to_string(),
+                value: ActionParameterValue::Str(load_id.to_string()),
+            },
+            ActionParameter {
+                key: "loadType".to_string(),
+                value: ActionParameterValue::Str(load_type.to_string()),
+            },
+            ActionParameter {
+                key: "weight".to_string(),
+                value: ActionParameterValue::Float(weight),
+            },
+        ]),
+    }
+}
+
+fn create_pick_action_with_all_params(load_id: &str) -> Action {
+    Action {
+        action_type: "pick".to_string(),
+        action_id: format!("pick_{}", load_id),
+        action_description: Some(format!("Pick load {}", load_id)),
+        blocking_type: BlockingType::Hard,
+        action_parameters: Some(vec![
+            ActionParameter {
+                key: "loadId".to_string(),
+                value: ActionParameterValue::Str(load_id.to_string()),
+            },
+            ActionParameter {
+                key: "loadType".to_string(),
+                value: ActionParameterValue::Str("pallet".to_string()),
+            },
+            ActionParameter {
+                key: "loadPosition".to_string(),
+                value: ActionParameterValue::Str("front".to_string()),
+            },
+            ActionParameter {
+                key: "weight".to_string(),
+                value: ActionParameterValue::Float(50.5),
+            },
+            ActionParameter {
+                key: "boundingBoxReferenceX".to_string(),
+                value: ActionParameterValue::Float(0.5),
+            },
+            ActionParameter {
+                key: "boundingBoxReferenceY".to_string(),
+                value: ActionParameterValue::Float(0.3),
+            },
+            ActionParameter {
+                key: "boundingBoxReferenceZ".to_string(),
+                value: ActionParameterValue::Float(0.2),
+            },
+            ActionParameter {
+                key: "boundingBoxReferenceTheta".to_string(),
+                value: ActionParameterValue::Float(0.0),
+            },
+            ActionParameter {
+                key: "loadLength".to_string(),
+                value: ActionParameterValue::Float(1.2),
+            },
+            ActionParameter {
+                key: "loadWidth".to_string(),
+                value: ActionParameterValue::Float(0.8),
+            },
+            ActionParameter {
+                key: "loadHeight".to_string(),
+                value: ActionParameterValue::Float(1.5),
+            },
+        ]),
+    }
+}
+
+fn create_drop_action(load_id: &str) -> Action {
+    Action {
+        action_type: "drop".to_string(),
+        action_id: format!("drop_{}", load_id),
+        action_description: Some(format!("Drop load {}", load_id)),
+        blocking_type: BlockingType::Hard,
+        action_parameters: Some(vec![
+            ActionParameter {
+                key: "loadId".to_string(),
+                value: ActionParameterValue::Str(load_id.to_string()),
+            },
+        ]),
+    }
+}
+
+fn create_drop_action_without_load_id() -> Action {
+    Action {
+        action_type: "drop".to_string(),
+        action_id: "drop_001".to_string(),
+        action_description: Some("Drop first load".to_string()),
+        blocking_type: BlockingType::Hard,
+        action_parameters: None,
+    }
+}
+
+#[test]
+fn test_pick_action_instant_action() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Initially, no loads
+    assert_eq!(simulator.state.loads.len(), 0);
+    
+    // Create instant actions with pick action
+    let pick_action = create_pick_action("LOAD-001", "pallet", 25.5);
+    let instant_actions = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action],
+    };
+    
+    // Accept instant actions
+    simulator.accept_instant_actions(instant_actions);
+    
+    // Verify action state was added
+    assert_eq!(simulator.state.action_states.len(), 1);
+    assert_eq!(simulator.state.action_states[0].action_id, "pick_LOAD-001");
+    assert_eq!(simulator.state.action_states[0].action_status, ActionStatus::Waiting);
+    
+    // Process instant actions
+    simulator.process_instant_actions();
+    
+    // Verify action was executed and finished
+    assert_eq!(simulator.state.action_states[0].action_status, ActionStatus::Finished);
+    
+    // Verify load was added to state
+    assert_eq!(simulator.state.loads.len(), 1);
+    let load = &simulator.state.loads[0];
+    assert_eq!(load.load_id, Some("LOAD-001".to_string()));
+    assert_eq!(load.load_type, Some("pallet".to_string()));
+    assert_eq!(load.weight, Some(25.5));
+}
+
+#[test]
+fn test_pick_action_with_all_parameters() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Create instant actions with pick action containing all parameters
+    let pick_action = create_pick_action_with_all_params("LOAD-002");
+    let instant_actions = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions);
+    simulator.process_instant_actions();
+    
+    // Verify load was added with all parameters
+    assert_eq!(simulator.state.loads.len(), 1);
+    let load = &simulator.state.loads[0];
+    assert_eq!(load.load_id, Some("LOAD-002".to_string()));
+    assert_eq!(load.load_type, Some("pallet".to_string()));
+    assert_eq!(load.load_position, Some("front".to_string()));
+    assert_eq!(load.weight, Some(50.5));
+    
+    // Verify bounding box reference
+    assert!(load.bounding_box_reference.is_some());
+    let bbox = load.bounding_box_reference.as_ref().unwrap();
+    assert_eq!(bbox.x, 0.5);
+    assert_eq!(bbox.y, 0.3);
+    assert_eq!(bbox.z, 0.2);
+    assert_eq!(bbox.theta, Some(0.0));
+    
+    // Verify load dimensions
+    assert!(load.load_dimensions.is_some());
+    let dims = load.load_dimensions.as_ref().unwrap();
+    assert_eq!(dims.length, 1.2);
+    assert_eq!(dims.width, 0.8);
+    assert_eq!(dims.height, Some(1.5));
+}
+
+#[test]
+fn test_drop_action_instant_action_with_load_id() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // First, pick a load
+    let pick_action = create_pick_action("LOAD-003", "box", 10.0);
+    let instant_actions_pick = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_pick);
+    simulator.process_instant_actions();
+    
+    // Verify load was added
+    assert_eq!(simulator.state.loads.len(), 1);
+    assert_eq!(simulator.state.loads[0].load_id, Some("LOAD-003".to_string()));
+    
+    // Now drop the load
+    let drop_action = create_drop_action("LOAD-003");
+    let instant_actions_drop = InstantActions {
+        header_id: 2,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![drop_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_drop);
+    simulator.process_instant_actions();
+    
+    // Verify load was removed
+    assert_eq!(simulator.state.loads.len(), 0);
+}
+
+#[test]
+fn test_drop_action_instant_action_without_load_id() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // First, pick a load
+    let pick_action = create_pick_action("LOAD-004", "box", 15.0);
+    let instant_actions_pick = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_pick);
+    simulator.process_instant_actions();
+    
+    // Verify load was added
+    assert_eq!(simulator.state.loads.len(), 1);
+    
+    // Now drop without specifying loadId (should remove first load)
+    let drop_action = create_drop_action_without_load_id();
+    let instant_actions_drop = InstantActions {
+        header_id: 2,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![drop_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_drop);
+    simulator.process_instant_actions();
+    
+    // Verify load was removed
+    assert_eq!(simulator.state.loads.len(), 0);
+}
+
+#[test]
+fn test_multiple_pick_actions() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Pick multiple loads
+    let pick_action_1 = create_pick_action("LOAD-005", "pallet", 20.0);
+    let pick_action_2 = create_pick_action("LOAD-006", "box", 5.0);
+    
+    let instant_actions = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action_1, pick_action_2],
+    };
+    
+    simulator.accept_instant_actions(instant_actions);
+    simulator.process_instant_actions();
+    
+    // Verify both loads were added
+    assert_eq!(simulator.state.loads.len(), 2);
+    assert!(simulator.state.loads.iter().any(|l| l.load_id == Some("LOAD-005".to_string())));
+    assert!(simulator.state.loads.iter().any(|l| l.load_id == Some("LOAD-006".to_string())));
+}
+
+#[test]
+fn test_drop_specific_load_from_multiple() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Pick multiple loads
+    let pick_action_1 = create_pick_action("LOAD-007", "pallet", 30.0);
+    let pick_action_2 = create_pick_action("LOAD-008", "box", 8.0);
+    
+    let instant_actions_pick = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action_1, pick_action_2],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_pick);
+    simulator.process_instant_actions();
+    
+    // Verify both loads were added
+    assert_eq!(simulator.state.loads.len(), 2);
+    
+    // Drop only LOAD-007
+    let drop_action = create_drop_action("LOAD-007");
+    let instant_actions_drop = InstantActions {
+        header_id: 2,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![drop_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_drop);
+    simulator.process_instant_actions();
+    
+    // Verify only LOAD-007 was removed, LOAD-008 remains
+    assert_eq!(simulator.state.loads.len(), 1);
+    assert_eq!(simulator.state.loads[0].load_id, Some("LOAD-008".to_string()));
+}
+
+#[test]
+fn test_pick_action_as_order_action() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Initialize position first
+    let init_action = create_init_position_action();
+    let instant_actions = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![init_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions);
+    simulator.process_instant_actions();
+    
+    // Create order with pick action on a node
+    let pick_action = create_pick_action("LOAD-009", "pallet", 40.0);
+    let mut order = create_small_order();
+    order.nodes[0].actions.push(pick_action.clone());
+    
+    // Process order
+    simulator.process_order(order);
+    
+    // Verify action state was added
+    assert!(simulator.state.action_states.iter().any(|a| a.action_id == "pick_LOAD-009"));
+    
+    // Initially, no loads
+    assert_eq!(simulator.state.loads.len(), 0);
+    
+    // Set last_node_sequence_id to match the first node so actions can be processed
+    simulator.state.last_node_sequence_id = 1;
+    
+    // Process node actions (this should execute the pick action)
+    simulator.update_state();
+    
+    // Verify load was added
+    assert_eq!(simulator.state.loads.len(), 1);
+    assert_eq!(simulator.state.loads[0].load_id, Some("LOAD-009".to_string()));
+}
+
+#[test]
+fn test_drop_action_as_order_action() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Initialize position first
+    let init_action = create_init_position_action();
+    let instant_actions = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![init_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions);
+    simulator.process_instant_actions();
+    
+    // First, pick a load via instant action
+    let pick_action = create_pick_action("LOAD-010", "box", 12.0);
+    let instant_actions_pick = InstantActions {
+        header_id: 2,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_pick);
+    simulator.process_instant_actions();
+    
+    // Verify load was added
+    assert_eq!(simulator.state.loads.len(), 1);
+    
+    // Create order with drop action on a node
+    let drop_action = create_drop_action("LOAD-010");
+    let mut order = create_small_order();
+    order.nodes[0].actions.push(drop_action.clone());
+    
+    // Process order
+    simulator.process_order(order);
+    
+    // Verify action state was added
+    assert!(simulator.state.action_states.iter().any(|a| a.action_id == "drop_LOAD-010"));
+    
+    // Set last_node_sequence_id to match the first node so actions can be processed
+    simulator.state.last_node_sequence_id = 1;
+    
+    // Process node actions (this should execute the drop action)
+    simulator.update_state();
+    
+    // Verify load was removed
+    assert_eq!(simulator.state.loads.len(), 0);
+}
+
+#[test]
+fn test_pick_and_drop_sequence() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Pick load
+    let pick_action = create_pick_action("LOAD-011", "pallet", 35.0);
+    let instant_actions_pick = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_pick);
+    simulator.process_instant_actions();
+    
+    assert_eq!(simulator.state.loads.len(), 1);
+    assert_eq!(simulator.state.loads[0].load_id, Some("LOAD-011".to_string()));
+    
+    // Drop load
+    let drop_action = create_drop_action("LOAD-011");
+    let instant_actions_drop = InstantActions {
+        header_id: 2,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![drop_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_drop);
+    simulator.process_instant_actions();
+    
+    assert_eq!(simulator.state.loads.len(), 0);
+    
+    // Pick another load
+    let pick_action_2 = create_pick_action("LOAD-012", "box", 7.5);
+    let instant_actions_pick_2 = InstantActions {
+        header_id: 3,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action_2],
+    };
+    
+    simulator.accept_instant_actions(instant_actions_pick_2);
+    simulator.process_instant_actions();
+    
+    assert_eq!(simulator.state.loads.len(), 1);
+    assert_eq!(simulator.state.loads[0].load_id, Some("LOAD-012".to_string()));
+}
+
+#[test]
+fn test_drop_nonexistent_load() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Try to drop a load that doesn't exist
+    let drop_action = create_drop_action("NONEXISTENT-LOAD");
+    let instant_actions = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![drop_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions);
+    simulator.process_instant_actions();
+    
+    // Should not crash, loads should remain empty
+    assert_eq!(simulator.state.loads.len(), 0);
+}
+
+#[test]
+fn test_pick_action_with_minimal_parameters() {
+    let config = create_test_config();
+    let mut simulator = VehicleSimulator::new(config);
+    
+    // Create pick action with only loadId
+    let pick_action = Action {
+        action_type: "pick".to_string(),
+        action_id: "pick_minimal".to_string(),
+        action_description: None,
+        blocking_type: BlockingType::Hard,
+        action_parameters: Some(vec![
+            ActionParameter {
+                key: "loadId".to_string(),
+                value: ActionParameterValue::Str("LOAD-MINIMAL".to_string()),
+            },
+        ]),
+    };
+    
+    let instant_actions = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![pick_action],
+    };
+    
+    simulator.accept_instant_actions(instant_actions);
+    simulator.process_instant_actions();
+    
+    // Verify load was added with minimal parameters
+    assert_eq!(simulator.state.loads.len(), 1);
+    let load = &simulator.state.loads[0];
+    assert_eq!(load.load_id, Some("LOAD-MINIMAL".to_string()));
+    assert_eq!(load.load_type, None);
+    assert_eq!(load.load_position, None);
+    assert_eq!(load.weight, None);
+    assert!(load.bounding_box_reference.is_none());
+    assert!(load.load_dimensions.is_none());
 } 

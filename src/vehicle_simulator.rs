@@ -8,7 +8,8 @@ use crate::mqtt_utils;
 use crate::utils;
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_action::{Action, ActionParameterValue};
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_connection::{Connection, ConnectionState};
-use crate::protocol::vda_2_0_0::vda5050_2_0_0_state::{State, ActionState, ActionStatus, NodeState, EdgeState, OperatingMode, BatteryState, SafetyState, EStop};
+use crate::protocol::vda_2_0_0::vda5050_2_0_0_state::{State, ActionState, ActionStatus, NodeState, EdgeState, OperatingMode, BatteryState, SafetyState, EStop, Load};
+use crate::protocol::vda5050_common::{BoundingBoxReference, LoadDimensions};
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_visualization::Visualization;
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_order::Order;
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_instant_actions::InstantActions;
@@ -148,6 +149,8 @@ impl VehicleSimulator {
             
             match action.action_type.as_str() {
                 "initPosition" => self.handle_init_position_action(&action),
+                "pick" => self.handle_pick_action(&action),
+                "drop" => self.handle_drop_action(&action),
                 _ => println!("Unknown action type: {}", action.action_type),
             }
 
@@ -211,6 +214,110 @@ impl VehicleSimulator {
             map_id: extract_string_param("mapId"),
             last_node_id: extract_string_param("lastNodeId"),
         }
+    }
+
+    fn handle_pick_action(&mut self, action: &Action) {
+        println!("Executing pick action");
+        
+        let load = self.extract_load_parameters(action);
+        self.state.loads.push(load);
+        println!("Load added. Total loads: {}", self.state.loads.len());
+    }
+
+    fn handle_drop_action(&mut self, action: &Action) {
+        println!("Executing drop action");
+        
+        let load_id = self.extract_string_param(action, "loadId");
+        
+        if !load_id.is_empty() {
+            self.state.loads.retain(|load| {
+                load.load_id.as_ref().map_or(true, |id| id != &load_id)
+            });
+            println!("Load with ID '{}' removed. Total loads: {}", load_id, self.state.loads.len());
+        } else {
+            // If no loadId specified, remove the first load (or all loads)
+            if !self.state.loads.is_empty() {
+                self.state.loads.remove(0);
+                println!("First load removed. Total loads: {}", self.state.loads.len());
+            }
+        }
+    }
+
+    fn extract_load_parameters(&self, action: &Action) -> Load {
+        let load_id = self.extract_string_param(action, "loadId");
+        let load_type = self.extract_string_param(action, "loadType");
+        let load_position = self.extract_string_param(action, "loadPosition");
+        let weight = self.extract_float_param(action, "weight");
+
+        // Extract bounding box reference if provided
+        let bounding_box_reference = if self.has_param(action, "boundingBoxReferenceX") {
+            Some(BoundingBoxReference {
+                x: self.extract_float_param(action, "boundingBoxReferenceX"),
+                y: self.extract_float_param(action, "boundingBoxReferenceY"),
+                z: self.extract_float_param(action, "boundingBoxReferenceZ"),
+                theta: if self.has_param(action, "boundingBoxReferenceTheta") {
+                    Some(self.extract_float_param(action, "boundingBoxReferenceTheta"))
+                } else {
+                    None
+                },
+            })
+        } else {
+            None
+        };
+
+        // Extract load dimensions if provided
+        let load_dimensions = if self.has_param(action, "loadLength") {
+            Some(LoadDimensions {
+                length: self.extract_float_param(action, "loadLength"),
+                width: self.extract_float_param(action, "loadWidth"),
+                height: if self.has_param(action, "loadHeight") {
+                    Some(self.extract_float_param(action, "loadHeight"))
+                } else {
+                    None
+                },
+            })
+        } else {
+            None
+        };
+
+        Load {
+            load_id: if load_id.is_empty() { None } else { Some(load_id) },
+            load_type: if load_type.is_empty() { None } else { Some(load_type) },
+            load_position: if load_position.is_empty() { None } else { Some(load_position) },
+            bounding_box_reference,
+            load_dimensions,
+            weight: if weight > 0.0 { Some(weight) } else { None },
+        }
+    }
+
+    fn extract_string_param(&self, action: &Action, key: &str) -> String {
+        action.action_parameters
+            .as_ref()
+            .and_then(|params| params.iter().find(|x| x.key == key))
+            .map(|param| match &param.value {
+                ActionParameterValue::Str(s) => s.clone(),
+                ActionParameterValue::Int(i) => i.to_string(),
+                ActionParameterValue::Float(f) => f.to_string(),
+            })
+            .unwrap_or_default()
+    }
+
+    fn extract_float_param(&self, action: &Action, key: &str) -> f32 {
+        action.action_parameters
+            .as_ref()
+            .and_then(|params| params.iter().find(|x| x.key == key))
+            .map(|param| match &param.value {
+                ActionParameterValue::Str(s) => s.parse::<f32>().unwrap_or(0.0),
+                ActionParameterValue::Float(f) => *f,
+                ActionParameterValue::Int(i) => *i as f32,
+            })
+            .unwrap_or(0.0)
+    }
+
+    fn has_param(&self, action: &Action, key: &str) -> bool {
+        action.action_parameters
+            .as_ref()
+            .map_or(false, |params| params.iter().any(|x| x.key == key))
     }
 
     pub async fn publish_connection(&mut self, mqtt_cli: &mqtt::AsyncClient) {
@@ -461,15 +568,14 @@ impl VehicleSimulator {
             let node_actions = &self.order.as_ref().unwrap().nodes[order_last_node_index].actions;
             
             if !node_actions.is_empty() {
-                for action_state in &mut self.state.action_states {
-                    for check_action in node_actions {
-                        if action_state.action_id == check_action.action_id 
-                            && action_state.action_status == ActionStatus::Waiting {
-                            println!("Executing action type: {:?}", action_state.action_type);
-                            action_state.action_status = ActionStatus::Finished;
-                            self.action_start_time = Some(chrono::Utc::now());
-                            return;
-                        }
+                for check_action in node_actions {
+                    if let Some(action_state) = self.state.action_states.iter().find(|state| 
+                        state.action_id == check_action.action_id && state.action_status == ActionStatus::Waiting
+                    ) {
+                        println!("Executing action type: {:?}", action_state.action_type);
+                        self.action_start_time = Some(chrono::Utc::now());
+                        self.run_action(check_action.clone());
+                        return;
                     }
                 }
             }
