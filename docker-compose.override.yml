@@ -1,0 +1,13 @@
+# Development / build override – applied automatically by Docker Compose when
+# both files are present (docker compose up / docker compose build).
+#
+# This file adds a build context to the simulator service so that the image is
+# built from source instead of being pulled. It is intentionally kept separate
+# so that the base docker-compose.yml remains usable in production environments
+# where only the pre-built image is needed.
+
+services:
+  simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile

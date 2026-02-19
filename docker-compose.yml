@@ -1,0 +1,20 @@
+# Base compose file – uses a pre-built image and expects an external MQTT broker.
+# To build from source locally, docker-compose.override.yml is applied automatically.
+#
+# Configure the broker address and all other parameters in config.toml before
+# starting the container. If your broker runs on the Docker host machine you can
+# use "host.docker.internal" as the host value on macOS / Windows, or rely on
+# the extra_hosts entry below on Linux.
+
+services:
+  simulator:
+    image: vda5050-vehicle-simulator:latest
+    volumes:
+      # Mount your local config.toml so you can adjust settings without
+      # rebuilding the image. Remove this line to use the embedded defaults.
+      - ./config.toml:/app/config.toml:ro
+    # Allows the container to reach an MQTT broker running on the Docker host
+    # via the hostname "host.docker.internal" on Linux (no-op on Mac / Windows).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
