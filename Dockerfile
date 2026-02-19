@@ -1,5 +1,5 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
-FROM rust:1-slim AS builder
+FROM rust:1-slim-bookworm AS builder
 
 # paho-mqtt uses the "bundled" feature which compiles the Paho C library from
 # source, so cmake and a C/C++ compiler are required at build time.
