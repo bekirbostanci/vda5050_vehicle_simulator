@@ -1,0 +1,208 @@
+{
+  "headerId": 1,
+  "timestamp": "2026-02-20T10:00:00.000Z",
+  "version": "2.0.0",
+  "manufacturer": "rikeb",
+  "serialNumber": "s1",
+
+  "typeSpecification": {
+    "seriesName": "rikeb-agv-v1",
+    "seriesDescription": "Differential drive carrier AGV simulated in Webots (mapId: webots)",
+    "agvKinematic": "DIFF",
+    "agvClass": "CARRIER",
+    "maxLoadMass": 100.0,
+    "localizationTypes": ["NATURAL"],
+    "navigationTypes": ["AUTONOMOUS"]
+  },
+
+  "physicalParameters": {
+    "speedMin": 0.1,
+    "speedMax": 1.5,
+    "accelerationMax": 0.5,
+    "decelerationMax": 0.5,
+    "heightMin": 0.3,
+    "heightMax": 0.5,
+    "width": 0.6,
+    "length": 0.8
+  },
+
+  "protocolLimits": {
+    "maxStringLens": {
+      "msgLen": 65536,
+      "topicSerialLen": 128,
+      "topicElemLen": 128,
+      "idLen": 128,
+      "idNumericalOnly": false,
+      "enumLen": 64,
+      "loadIdLen": 64
+    },
+    "maxArrayLens": {
+      "order.nodes": 50,
+      "order.edges": 50,
+      "node.actions": 10,
+      "edge.actions": 10,
+      "actions.actionsParameters": 10,
+      "instantActions": 10,
+      "trajectory.knotVector": 50,
+      "trajectory.controlPoints": 50,
+      "state.nodeStates": 50,
+      "state.edgeStates": 50,
+      "state.loads": 1,
+      "state.actionStates": 20,
+      "state.errors": 10,
+      "state.information": 10,
+      "error.errorReferences": 5,
+      "information.infoReferences": 5
+    },
+    "timing": {
+      "minOrderInterval": 0.5,
+      "minStateInterval": 0.5,
+      "defaultStateInterval": 1.0,
+      "visualizationInterval": 0.5
+    }
+  },
+
+  "protocolFeatures": {
+    "optionalParameters": [
+      {
+        "parameter": "order.nodes.nodePosition.allowedDeviationXY",
+        "support": "SUPPORTED",
+        "description": "Supported for position tolerance control"
+      },
+      {
+        "parameter": "order.nodes.nodePosition.allowedDeviationTheta",
+        "support": "SUPPORTED",
+        "description": "Supported for heading tolerance control"
+      }
+    ],
+    "agvActions": [
+      {
+        "actionType": "startPause",
+        "actionDescription": "Pause the AGV",
+        "actionScopes": ["INSTANT"],
+        "blockingTypes": ["HARD"]
+      },
+      {
+        "actionType": "stopPause",
+        "actionDescription": "Resume the AGV from pause",
+        "actionScopes": ["INSTANT"],
+        "blockingTypes": ["HARD"]
+      },
+      {
+        "actionType": "pick",
+        "actionDescription": "Pick up a load",
+        "actionScopes": ["NODE"],
+        "actionParameters": [
+          {
+            "key": "lhd",
+            "valueDataType": "STRING",
+            "description": "Load handling device identifier",
+            "isOptional": false
+          }
+        ],
+        "blockingTypes": ["HARD"]
+      },
+      {
+        "actionType": "drop",
+        "actionDescription": "Drop a load",
+        "actionScopes": ["NODE"],
+        "actionParameters": [
+          {
+            "key": "lhd",
+            "valueDataType": "STRING",
+            "description": "Load handling device identifier",
+            "isOptional": false
+          }
+        ],
+        "blockingTypes": ["HARD"]
+      }
+    ]
+  },
+
+  "agvGeometry": {
+    "wheelDefinitions": [
+      {
+        "type": "DRIVE",
+        "isActiveDriven": true,
+        "isActiveSteered": false,
+        "position": { "x": 0.0, "y": 0.2 },
+        "diameter": 0.15,
+        "width": 0.05
+      },
+      {
+        "type": "DRIVE",
+        "isActiveDriven": true,
+        "isActiveSteered": false,
+        "position": { "x": 0.0, "y": -0.2 },
+        "diameter": 0.15,
+        "width": 0.05
+      },
+      {
+        "type": "CASTER",
+        "isActiveDriven": false,
+        "isActiveSteered": false,
+        "position": { "x": 0.3, "y": 0.0 },
+        "diameter": 0.08,
+        "width": 0.03,
+        "centerDisplacement": 0.02
+      },
+      {
+        "type": "CASTER",
+        "isActiveDriven": false,
+        "isActiveSteered": false,
+        "position": { "x": -0.3, "y": 0.0 },
+        "diameter": 0.08,
+        "width": 0.03,
+        "centerDisplacement": 0.02
+      }
+    ],
+    "envelopes2d": [
+      {
+        "set": "default",
+        "description": "Standard driving envelope",
+        "polygonPoints": [
+          { "x": 0.4, "y": 0.3 },
+          { "x": 0.4, "y": -0.3 },
+          { "x": -0.4, "y": -0.3 },
+          { "x": -0.4, "y": 0.3 }
+        ]
+      }
+    ]
+  },
+
+  "loadSpecification": {
+    "loadPositions": ["front"],
+    "loadSets": [
+      {
+        "setName": "DEFAULT",
+        "loadType": "EPAL",
+        "loadPositions": ["front"],
+        "boundingBoxReference": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "loadDimensions": {
+          "length": 1.2,
+          "width": 0.8,
+          "height": 0.144
+        },
+        "maxWeight": 100.0,
+        "agvSpeedLimit": 1.0,
+        "agvAccelerationLimit": 0.3,
+        "agvDecelerationLimit": 0.3,
+        "pickTime": 5.0,
+        "dropTime": 5.0,
+        "description": "Standard EUR pallet handling"
+      }
+    ]
+  },
+
+  "vehicleConfig": {
+    "versions": [
+      { "key": "softwareVersion", "value": "1.0.0" },
+      { "key": "simulationEnvironment", "value": "webots" }
+    ],
+    "network": {
+      "localIpAddress": "192.168.1.100",
+      "netmask": "255.255.255.0",
+      "defaultGateway": "192.168.1.1"
+    }
+  }
+}
