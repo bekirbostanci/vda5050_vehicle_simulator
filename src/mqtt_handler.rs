@@ -96,10 +96,16 @@ fn create_mqtt_client() -> mqtt::AsyncClient {
 }
 
 async fn connect_to_broker(mqtt_client: &mqtt::AsyncClient) {
-    let conn_opts = mqtt::ConnectOptionsBuilder::with_mqtt_version(mqtt::MQTT_VERSION_5)
-        .clean_start(true)
-        .finalize();
-
+    let broker_config = config::get_config().mqtt_broker;
+    let conn_opts = {
+        let mut builder = mqtt::ConnectOptionsBuilder::with_mqtt_version(mqtt::MQTT_VERSION_5);
+        builder.clean_start(true);
+        if let (Some(username), Some(password)) = (&broker_config.username, &broker_config.password) {
+            builder.user_name(username);
+            builder.password(password);
+        }
+        builder.finalize()
+    };
     mqtt_client.connect(conn_opts).await.unwrap();
 }
 
