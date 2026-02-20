@@ -6,7 +6,7 @@ use tokio::time::sleep;
 use crate::config;
 use crate::mqtt_utils;
 use crate::utils;
-use crate::protocol::vda_2_0_0::vda5050_2_0_0_action::{Action, ActionParameterValue};
+use crate::protocol::vda_2_0_0::vda5050_2_0_0_action::{Action, ActionParameterValue, BlockingType};
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_connection::{Connection, ConnectionState};
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_state::{State, ActionState, ActionStatus, NodeState, EdgeState, OperatingMode, BatteryState, SafetyState, EStop, Load};
 use crate::protocol::vda5050_common::{BoundingBoxReference, LoadDimensions};
@@ -14,6 +14,16 @@ use crate::protocol::vda_2_0_0::vda5050_2_0_0_visualization::Visualization;
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_order::Order;
 use crate::protocol::vda_2_0_0::vda5050_2_0_0_instant_actions::InstantActions;
 use crate::protocol::vda5050_common::{AgvPosition, NodePosition};
+use crate::protocol::vda_2_0_0::vda5050_2_0_0_factsheet::{
+    Factsheet, TypeSpecification, AgvKinematic, AgvClass, LocalizationType, NavigationType,
+    PhysicalParameters, ProtocolLimits, MaxStringLens, MaxArrayLens, Timing,
+    ProtocolFeatures, OptionalParameter, ParameterSupport, AgvAction, ActionScope,
+    AgvActionParameter, ValueDataType, AgvGeometry, WheelDefinition, WheelType, WheelPosition,
+    Envelope2d, PolygonPoint, LoadSpecification, LoadSet,
+    BoundingBoxReference as FactsheetBoundingBoxReference,
+    LoadDimensions as FactsheetLoadDimensions,
+    VehicleConfig as FactsheetVehicleConfig, VehicleConfigVersion, VehicleNetwork,
+};
 
 pub struct VehicleSimulator {
     connection_topic: String,
@@ -22,6 +32,8 @@ pub struct VehicleSimulator {
     pub state: State,
     visualization_topic: String,
     pub visualization: Visualization,
+    factsheet_topic: String,
+    factsheet: Factsheet,
 
     order: Option<Order>,
     instant_actions: Option<InstantActions>,
@@ -42,10 +54,12 @@ impl VehicleSimulator {
         let connection_topic = format!("{}/connection", base_topic);
         let state_topic = format!("{}/state", base_topic);
         let visualization_topic = format!("{}/visualization", base_topic);
+        let factsheet_topic = format!("{}/factsheet", base_topic);
 
         let connection = Self::create_initial_connection(&config);
         let (state, agv_position) = Self::create_initial_state(&config);
         let visualization = Self::create_initial_visualization(&config, &agv_position);
+        let factsheet = Self::create_initial_factsheet(&config);
 
         Self {
             connection_topic,
@@ -54,6 +68,8 @@ impl VehicleSimulator {
             state,
             visualization_topic,
             visualization,
+            factsheet_topic,
+            factsheet,
             order: None,
             instant_actions: None,
             action_start_time: None,
@@ -140,6 +156,239 @@ impl VehicleSimulator {
             agv_position: Some(agv_position.clone()),
             velocity: None,
         }
+    }
+
+    fn create_initial_factsheet(config: &config::Config) -> Factsheet {
+        Factsheet {
+            header_id: 0,
+            timestamp: utils::get_timestamp(),
+            version: config.vehicle.vda_full_version.clone(),
+            manufacturer: config.vehicle.manufacturer.clone(),
+            serial_number: config.vehicle.serial_number.clone(),
+            type_specification: TypeSpecification {
+                series_name: String::from("rikeb-agv-v1"),
+                series_description: Some(format!(
+                    "Differential drive carrier AGV simulated in Webots (mapId: {})",
+                    config.settings.map_id
+                )),
+                agv_kinematic: AgvKinematic::Diff,
+                agv_class: AgvClass::Carrier,
+                max_load_mass: 100.0,
+                localization_types: vec![LocalizationType::Natural],
+                navigation_types: vec![NavigationType::Autonomous],
+            },
+            physical_parameters: PhysicalParameters {
+                speed_min: 0.1,
+                speed_max: 1.5,
+                acceleration_max: 0.5,
+                deceleration_max: 0.5,
+                height_min: Some(0.3),
+                height_max: 0.5,
+                width: 0.6,
+                length: 0.8,
+            },
+            protocol_limits: ProtocolLimits {
+                max_string_lens: MaxStringLens {
+                    msg_len: Some(65536),
+                    topic_serial_len: Some(128),
+                    topic_elem_len: Some(128),
+                    id_len: Some(128),
+                    id_numerical_only: Some(false),
+                    enum_len: Some(64),
+                    load_id_len: Some(64),
+                },
+                max_array_lens: MaxArrayLens {
+                    order_nodes: Some(50),
+                    order_edges: Some(50),
+                    node_actions: Some(10),
+                    edge_actions: Some(10),
+                    actions_actions_parameters: Some(10),
+                    instant_actions: Some(10),
+                    trajectory_knot_vector: Some(50),
+                    trajectory_control_points: Some(50),
+                    state_node_states: Some(50),
+                    state_edge_states: Some(50),
+                    state_loads: Some(1),
+                    state_action_states: Some(20),
+                    state_errors: Some(10),
+                    state_information: Some(10),
+                    error_error_references: Some(5),
+                    information_info_references: Some(5),
+                },
+                timing: Timing {
+                    min_order_interval: 0.5,
+                    min_state_interval: 0.5,
+                    default_state_interval: Some(1.0),
+                    visualization_interval: Some(0.5),
+                },
+            },
+            protocol_features: ProtocolFeatures {
+                optional_parameters: vec![
+                    OptionalParameter {
+                        parameter: String::from("order.nodes.nodePosition.allowedDeviationXY"),
+                        support: ParameterSupport::Supported,
+                        description: Some(String::from("Supported for position tolerance control")),
+                    },
+                    OptionalParameter {
+                        parameter: String::from("order.nodes.nodePosition.allowedDeviationTheta"),
+                        support: ParameterSupport::Supported,
+                        description: Some(String::from("Supported for heading tolerance control")),
+                    },
+                ],
+                agv_actions: vec![
+                    AgvAction {
+                        action_type: String::from("startPause"),
+                        action_description: Some(String::from("Pause the AGV")),
+                        action_scopes: vec![ActionScope::Instant],
+                        action_parameters: None,
+                        result_description: None,
+                        blocking_types: Some(vec![BlockingType::Hard]),
+                    },
+                    AgvAction {
+                        action_type: String::from("stopPause"),
+                        action_description: Some(String::from("Resume the AGV from pause")),
+                        action_scopes: vec![ActionScope::Instant],
+                        action_parameters: None,
+                        result_description: None,
+                        blocking_types: Some(vec![BlockingType::Hard]),
+                    },
+                    AgvAction {
+                        action_type: String::from("pick"),
+                        action_description: Some(String::from("Pick up a load")),
+                        action_scopes: vec![ActionScope::Node],
+                        action_parameters: Some(vec![AgvActionParameter {
+                            key: String::from("lhd"),
+                            value_data_type: ValueDataType::String,
+                            description: Some(String::from("Load handling device identifier")),
+                            is_optional: Some(false),
+                        }]),
+                        result_description: None,
+                        blocking_types: Some(vec![BlockingType::Hard]),
+                    },
+                    AgvAction {
+                        action_type: String::from("drop"),
+                        action_description: Some(String::from("Drop a load")),
+                        action_scopes: vec![ActionScope::Node],
+                        action_parameters: Some(vec![AgvActionParameter {
+                            key: String::from("lhd"),
+                            value_data_type: ValueDataType::String,
+                            description: Some(String::from("Load handling device identifier")),
+                            is_optional: Some(false),
+                        }]),
+                        result_description: None,
+                        blocking_types: Some(vec![BlockingType::Hard]),
+                    },
+                ],
+            },
+            agv_geometry: AgvGeometry {
+                wheel_definitions: Some(vec![
+                    WheelDefinition {
+                        r#type: WheelType::Drive,
+                        is_active_driven: true,
+                        is_active_steered: false,
+                        position: WheelPosition { x: 0.0, y: 0.2, theta: None },
+                        diameter: 0.15,
+                        width: 0.05,
+                        center_displacement: None,
+                        constraints: None,
+                    },
+                    WheelDefinition {
+                        r#type: WheelType::Drive,
+                        is_active_driven: true,
+                        is_active_steered: false,
+                        position: WheelPosition { x: 0.0, y: -0.2, theta: None },
+                        diameter: 0.15,
+                        width: 0.05,
+                        center_displacement: None,
+                        constraints: None,
+                    },
+                    WheelDefinition {
+                        r#type: WheelType::Caster,
+                        is_active_driven: false,
+                        is_active_steered: false,
+                        position: WheelPosition { x: 0.3, y: 0.0, theta: None },
+                        diameter: 0.08,
+                        width: 0.03,
+                        center_displacement: Some(0.02),
+                        constraints: None,
+                    },
+                    WheelDefinition {
+                        r#type: WheelType::Caster,
+                        is_active_driven: false,
+                        is_active_steered: false,
+                        position: WheelPosition { x: -0.3, y: 0.0, theta: None },
+                        diameter: 0.08,
+                        width: 0.03,
+                        center_displacement: Some(0.02),
+                        constraints: None,
+                    },
+                ]),
+                envelopes2d: Some(vec![
+                    Envelope2d {
+                        set: String::from("default"),
+                        polygon_points: vec![
+                            PolygonPoint { x: 0.4, y: 0.3 },
+                            PolygonPoint { x: 0.4, y: -0.3 },
+                            PolygonPoint { x: -0.4, y: -0.3 },
+                            PolygonPoint { x: -0.4, y: 0.3 },
+                        ],
+                        description: Some(String::from("Standard driving envelope")),
+                    },
+                ]),
+                envelopes3d: None,
+            },
+            load_specification: LoadSpecification {
+                load_positions: Some(vec![String::from("front")]),
+                load_sets: Some(vec![LoadSet {
+                    set_name: String::from("DEFAULT"),
+                    load_type: String::from("EPAL"),
+                    load_positions: Some(vec![String::from("front")]),
+                    bounding_box_reference: Some(FactsheetBoundingBoxReference {
+                        x: 0.0, y: 0.0, z: 0.0, theta: None,
+                    }),
+                    load_dimensions: Some(FactsheetLoadDimensions {
+                        length: 1.2,
+                        width: 0.8,
+                        height: Some(0.144),
+                    }),
+                    max_weight: Some(100.0),
+                    min_load_handling_height: None,
+                    max_load_handling_height: None,
+                    min_load_handling_depth: None,
+                    max_load_handling_depth: None,
+                    min_load_handling_tilt: None,
+                    max_load_handling_tilt: None,
+                    agv_speed_limit: Some(1.0),
+                    agv_acceleration_limit: Some(0.3),
+                    agv_deceleration_limit: Some(0.3),
+                    pick_time: Some(5.0),
+                    drop_time: Some(5.0),
+                    description: Some(String::from("Standard EUR pallet handling")),
+                }]),
+            },
+            vehicle_config: Some(FactsheetVehicleConfig {
+                versions: Some(vec![
+                    VehicleConfigVersion { key: String::from("softwareVersion"), value: String::from("1.0.0") },
+                    VehicleConfigVersion { key: String::from("simulationEnvironment"), value: String::from("webots") },
+                ]),
+                network: Some(VehicleNetwork {
+                    dns_servers: None,
+                    local_ip_address: Some(String::from("192.168.1.100")),
+                    ntp_servers: None,
+                    netmask: Some(String::from("255.255.255.0")),
+                    default_gateway: Some(String::from("192.168.1.1")),
+                }),
+            }),
+        }
+    }
+
+    pub async fn publish_factsheet(&mut self, mqtt_cli: &mqtt::AsyncClient) {
+        self.factsheet.header_id += 1;
+        self.factsheet.timestamp = utils::get_timestamp();
+        let json = serde_json::to_string(&self.factsheet).unwrap();
+        mqtt_utils::mqtt_publish(mqtt_cli, &self.factsheet_topic, &json)
+            .await
+            .unwrap();
     }
 
     pub fn run_action(&mut self, action: Action) {

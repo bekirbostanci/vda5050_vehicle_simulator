@@ -8,7 +8,8 @@ This project is a VDA5050-compliant robot simulator written in Rust. It simulate
 - Communicates with a broker via MQTT.
 - Configurable vehicle, map, and simulator settings.
 - Supports visualization updates and actions.
-- Supports trajectory
+- Supports trajectory.
+- Publishes a VDA5050 factsheet once after connecting, describing the AGV type's capabilities, geometry, and protocol limits.
 
 ## Configuration
 
@@ -142,6 +143,19 @@ To set up and run the VDA5050 robot simulator, follow these steps:
 Once the simulator is running, it will start sending messages to the MQTT broker according to the configuration in the `config.toml` file. You can monitor the robot's state, actions, and other telemetry by subscribing to the relevant MQTT topics using a client or tool such as [MQTT Explorer](https://mqtt-explorer.com/).
 
 To visualize the robot's status and actions, you can adjust the `visualization_frequency` setting in `config.toml`.
+
+### MQTT Topics
+
+All topics follow the VDA5050 topic scheme `{vda_interface}/{vda_version}/{manufacturer}/{serial_number}/...`:
+
+| Topic | Direction | Description |
+|---|---|---|
+| `.../connection` | Published | Connection state (`ONLINE` / `CONNECTION_BROKEN`) |
+| `.../factsheet` | Published | AGV type factsheet, sent once after the connection goes online |
+| `.../state` | Published | Full AGV state, published at `state_frequency` |
+| `.../visualization` | Published | Position/velocity snapshot, published at `visualization_frequency` |
+| `.../order` | Subscribed | Order messages from master control |
+| `.../instantActions` | Subscribed | Instant action messages from master control |
 
 ## License
 

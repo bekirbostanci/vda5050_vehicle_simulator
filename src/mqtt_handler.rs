@@ -62,6 +62,9 @@ pub async fn publish_vda_messages(
     // Publish initial connection
     simulator.lock().await.publish_connection(&mqtt_client).await;
 
+    // Publish factsheet once after connection is established
+    simulator.lock().await.publish_factsheet(&mqtt_client).await;
+
     // Main publishing loop
     let tick_time = 50;
     let mut state_counter = 0;

@@ -4,3 +4,4 @@ pub mod vda5050_2_0_0_action;
 pub mod vda5050_2_0_0_order;
 pub mod vda5050_2_0_0_instant_actions;
 pub mod vda5050_2_0_0_visualization;
+pub mod vda5050_2_0_0_factsheet;
