@@ -2,8 +2,8 @@
 host = "localhost"
 port = "1883"
 vda_interface = "uagv"
-username = "guest"
-password = "guest"
+username = ""
+password = ""
 
 [vehicle]
 serial_number = "s1"

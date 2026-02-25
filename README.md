@@ -60,7 +60,7 @@ speed = 0.05                         # Robot speed in meters per second
 - **robot_count**: The number of robots being simulated. This allows you to simulate multiple robots within the same environment.
 - **speed**: The speed of the robot in meters per second, which dictates how fast the robot will move in the simulation.
 
-## Docker Compose
+## Docker 
 
 The repository ships a `Dockerfile` and two Compose files that let you build and run the simulator without installing Rust locally.
 
@@ -69,49 +69,6 @@ The repository ships a `Dockerfile` and two Compose files that let you build and
 | `docker-compose.yml` | Base file. Uses a pre-built image and expects an external MQTT broker. |
 | `docker-compose.override.yml` | Development override. Adds a build context so the image is compiled from source. Applied automatically by Docker Compose when both files are present. |
 
-### Building from source
-
-```bash
-docker compose build
-```
-
-Docker Compose picks up `docker-compose.override.yml` automatically, so the command above builds the image from the local `Dockerfile`. The build uses a multi-stage process: dependencies are compiled in a separate layer so that subsequent builds only recompile changed application code.
-
-### Running the simulator
-
-1. Edit `config.toml` to point to your MQTT broker and adjust any other settings.
-
-2. Start the container:
-
-    ```bash
-    docker compose up
-    ```
-
-    The `config.toml` file is mounted read-only into the container at `/app/config.toml`, so you can change settings and restart without rebuilding the image.
-
-3. To run the container in the background:
-
-    ```bash
-    docker compose up -d
-    ```
-
-4. To stop it again:
-
-    ```bash
-    docker compose down
-    ```
-
-### Connecting to a broker on the host machine
-
-If your MQTT broker runs on the Docker host rather than inside another container, use `host.docker.internal` as the `host` value in `config.toml`. On Linux the Compose file already adds the required `extra_hosts` entry; on macOS and Windows the hostname resolves out of the box.
-
-### Using a pre-built image (production)
-
-If you only have the base `docker-compose.yml` (without the override file), Docker Compose uses the pre-built image `vda5050-vehicle-simulator:latest` directly without building:
-
-```bash
-docker compose -f docker-compose.yml up
-```
 
 ## Requirements
 
