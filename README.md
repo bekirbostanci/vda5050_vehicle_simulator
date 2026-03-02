@@ -19,8 +19,8 @@ You can configure the simulator using a `config.toml` file. Below is an example 
 host = "localhost"                  # MQTT broker address
 port = "1883"                        # MQTT broker port
 vda_interface = "uagv"               # VDA interface to use
-username = "guest"                   # MQTT broker username (optional)
-password = "guest"                   # MQTT broker password (optional)
+username = ""                   # MQTT broker username (optional)
+password = ""                   # MQTT broker password (optional)
 
 [vehicle]
 serial_number = "s1"                 # Serial number of the AGV
