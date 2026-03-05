@@ -17,8 +17,8 @@ fn create_test_config() -> Config {
             host: "localhost".to_string(),
             port: "1883".to_string(),
             vda_interface: "uagv".to_string(),
-            username: "".to_string(),
-            password: "".to_string(),
+            username: Some("".to_string()),
+            password: Some("".to_string()),
         },
         vehicle: VehicleConfig {
             serial_number: "TEST-AGV-001".to_string(),
