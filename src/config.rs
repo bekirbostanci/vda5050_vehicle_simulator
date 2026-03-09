@@ -10,6 +10,8 @@ pub struct MqttBrokerConfig {
     pub host: String,
     pub port: String,
     pub vda_interface: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]

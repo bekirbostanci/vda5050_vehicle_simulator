@@ -19,6 +19,8 @@ You can configure the simulator using a `config.toml` file. Below is an example 
 host = "localhost"                  # MQTT broker address
 port = "1883"                        # MQTT broker port
 vda_interface = "uagv"               # VDA interface to use
+username = ""                   # MQTT broker username (optional)
+password = ""                   # MQTT broker password (optional)
 
 [vehicle]
 serial_number = "s1"                 # Serial number of the AGV
@@ -39,6 +41,8 @@ speed = 0.05                         # Robot speed in meters per second
 - **host**: The address of the MQTT broker (default: localhost).
 - **port**: The port of the MQTT broker (default: 1883).
 - **vda_interface**: The type of VDA interface used.
+- **username**: The username for authenticating with the MQTT broker. Leave empty or omit if the broker requires no authentication.
+- **password**: The password for authenticating with the MQTT broker. Leave empty or omit if the broker requires no authentication.
 
 ### Vehicle Section
 
@@ -55,6 +59,16 @@ speed = 0.05                         # Robot speed in meters per second
 - **action_time**: The time it takes to complete an action (in seconds). This controls how long each task or action will take for the robot to execute.
 - **robot_count**: The number of robots being simulated. This allows you to simulate multiple robots within the same environment.
 - **speed**: The speed of the robot in meters per second, which dictates how fast the robot will move in the simulation.
+
+## Docker 
+
+The repository ships a `Dockerfile` and two Compose files that let you build and run the simulator without installing Rust locally.
+
+| File | Purpose |
+|---|---|
+| `docker-compose.yml` | Base file. Uses a pre-built image and expects an external MQTT broker. |
+| `docker-compose.override.yml` | Development override. Adds a build context so the image is compiled from source. Applied automatically by Docker Compose when both files are present. |
+
 
 ## Requirements
 
