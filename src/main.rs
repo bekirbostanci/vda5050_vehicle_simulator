@@ -29,7 +29,9 @@ async fn main() {
 async fn spawn_vehicle_simulator(config: config::Config, robot_index: u32) {
     // Create vehicle-specific configuration
     let mut vehicle_config = config.clone();
-    vehicle_config.vehicle.serial_number = format!("{}{}", config.vehicle.serial_number, robot_index + 1);
+    if vehicle_config.settings.robot_count > 1 {
+        vehicle_config.vehicle.serial_number = format!("{}{}", config.vehicle.serial_number, robot_index + 1);
+    }
     
     // Create and share vehicle simulator
     let vehicle_simulator = VehicleSimulator::new(vehicle_config.clone());

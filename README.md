@@ -51,6 +51,18 @@ speed = 0.05                         # Robot speed in meters per second
 - **vda_version**: The version of the VDA standard being used.
 - **vda_full_version**: The full version number of the VDA standard.
 
+If more than one robot is specified (`robot_count` below), an integer will be appended to each robot's `serial_number`, starting with 1. This will *not* occur if `robot_count = 1`.
+
+The following, for instance, will produce robots with the serial numbers "my_robot1", "my_robot2" and "my_robot3":
+
+```toml
+[vehicle]
+serial_number = "my_robot"
+
+[settings]
+robot_count = 3
+```
+
 ### Settings Section
 
 - **map_id**: Identifier for the map used in the simulation (e.g., "webots").
