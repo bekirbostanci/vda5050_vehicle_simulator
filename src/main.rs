@@ -43,12 +43,13 @@ async fn spawn_vehicle_simulator(config: config::Config, robot_index: u32) {
 
     // Spawn MQTT subscription task
     tokio::spawn(subscribe_vda_messages(
-        vehicle_config,
+        vehicle_config.clone(),
         simulator_for_subscribe,
     ));
 
     // Spawn MQTT publishing task
     tokio::spawn(publish_vda_messages(
+        vehicle_config,
         simulator_for_publish,
         config.settings.state_frequency,
         config.settings.visualization_frequency,

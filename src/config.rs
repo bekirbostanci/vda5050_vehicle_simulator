@@ -12,6 +12,11 @@ pub struct MqttBrokerConfig {
     pub vda_interface: String,
     pub username: Option<String>,
     pub password: Option<String>,
+    pub tls: Option<bool>,
+    pub client_id: Option<String>,
+    pub ca_file: Option<String>,
+    pub cert_file: Option<String>,
+    pub key_file: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]

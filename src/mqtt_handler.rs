@@ -34,10 +34,10 @@ pub async fn subscribe_vda_messages(
     }
 
     let qos = vec![1; topics.len()];
-    let mut mqtt_client = create_mqtt_client();
+    let mut mqtt_client = create_mqtt_client(&config);
     let mut message_stream = mqtt_client.get_stream(25);
 
-    connect_to_broker(&mqtt_client).await;
+    connect_to_broker(&mqtt_client, &config).await;
     subscribe_to_topics(&mqtt_client, &topics, &qos).await;
 
     println!("Waiting for messages on topics: {:?}", topics);
@@ -52,12 +52,13 @@ pub async fn subscribe_vda_messages(
 }
 
 pub async fn publish_vda_messages(
+    config: config::Config,
     simulator: Arc<Mutex<VehicleSimulator>>,
     state_frequency: u64,
     visualization_frequency: u64,
 ) {
-    let mqtt_client = create_mqtt_client();
-    connect_to_broker(&mqtt_client).await;
+    let mqtt_client = create_mqtt_client(&config);
+    connect_to_broker(&mqtt_client, &config).await;
 
     // Publish initial connection
     simulator.lock().await.publish_connection(&mqtt_client).await;
@@ -88,21 +89,24 @@ pub async fn publish_vda_messages(
     }
 }
 
-fn create_mqtt_client() -> mqtt::AsyncClient {
-    mqtt::AsyncClient::new(mqtt_utils::mqtt_create_opts()).unwrap_or_else(|e| {
+fn create_mqtt_client(config: &config::Config) -> mqtt::AsyncClient {
+    mqtt::AsyncClient::new(mqtt_utils::mqtt_create_opts(config)).unwrap_or_else(|e| {
         println!("Error creating MQTT client: {:?}", e);
         process::exit(-1);
     })
 }
 
-async fn connect_to_broker(mqtt_client: &mqtt::AsyncClient) {
-    let broker_config = config::get_config().mqtt_broker;
+async fn connect_to_broker(mqtt_client: &mqtt::AsyncClient, config: &config::Config) {
+    let broker_config = &config.mqtt_broker;
     let conn_opts = {
         let mut builder = mqtt::ConnectOptionsBuilder::with_mqtt_version(mqtt::MQTT_VERSION_5);
         builder.clean_start(true);
         if let (Some(username), Some(password)) = (&broker_config.username, &broker_config.password) {
             builder.user_name(username);
             builder.password(password);
+        }
+        if broker_config.tls.unwrap_or(false) {
+            builder.ssl_options(mqtt_utils::build_ssl_options(broker_config));
         }
         builder.finalize()
     };

@@ -1,6 +1,7 @@
 use vda5050_vehicle_simulator::{
     vehicle_simulator::VehicleSimulator,
     config::{Config, MqttBrokerConfig, VehicleConfig, Settings},
+    mqtt_utils,
     protocol::vda_2_0_0::{
         vda5050_2_0_0_action::{Action, ActionParameter, ActionParameterValue, BlockingType},
         vda5050_2_0_0_instant_actions::InstantActions,
@@ -19,6 +20,11 @@ fn create_test_config() -> Config {
             vda_interface: "uagv".to_string(),
             username: Some("".to_string()),
             password: Some("".to_string()),
+            tls: None,
+            client_id: None,
+            ca_file: None,
+            cert_file: None,
+            key_file: None,
         },
         vehicle: VehicleConfig {
             serial_number: "TEST-AGV-001".to_string(),
@@ -35,6 +41,14 @@ fn create_test_config() -> Config {
             speed: 0.1,
         },
     }
+}
+
+fn create_test_config_with_tls(client_id: Option<&str>) -> Config {
+    let mut config = create_test_config();
+    config.mqtt_broker.port = "8883".to_string();
+    config.mqtt_broker.tls = Some(true);
+    config.mqtt_broker.client_id = client_id.map(|s| s.to_string());
+    config
 }
 
 fn create_init_position_action() -> Action {
@@ -934,4 +948,92 @@ fn test_pick_action_with_minimal_parameters() {
     assert_eq!(load.weight, None);
     assert!(load.bounding_box_reference.is_none());
     assert!(load.load_dimensions.is_none());
-} 
+}
+
+#[test]
+fn test_server_uri_uses_tcp_when_tls_disabled() {
+    let config = create_test_config();
+    let uri = mqtt_utils::build_server_uri(&config.mqtt_broker);
+    assert_eq!(uri, "tcp://localhost:1883");
+}
+
+#[test]
+fn test_server_uri_uses_tcp_when_tls_unset() {
+    let mut config = create_test_config();
+    config.mqtt_broker.tls = None;
+    let uri = mqtt_utils::build_server_uri(&config.mqtt_broker);
+    assert!(uri.starts_with("tcp://"), "expected tcp scheme, got {}", uri);
+}
+
+#[test]
+fn test_server_uri_uses_ssl_when_tls_enabled() {
+    let config = create_test_config_with_tls(Some("vehicle-001"));
+    let uri = mqtt_utils::build_server_uri(&config.mqtt_broker);
+    assert_eq!(uri, "ssl://localhost:8883");
+}
+
+#[test]
+fn test_client_id_is_random_uuid_when_tls_disabled() {
+    let config = create_test_config();
+    let id_a = mqtt_utils::resolve_client_id(&config.mqtt_broker);
+    let id_b = mqtt_utils::resolve_client_id(&config.mqtt_broker);
+    assert_ne!(id_a, id_b, "non-TLS should generate a fresh UUID each call");
+    assert_eq!(id_a.len(), 36, "expected UUID-shaped string, got {}", id_a);
+}
+
+#[test]
+fn test_client_id_is_random_uuid_when_tls_disabled_even_if_configured() {
+    // When TLS is off, a configured client_id is intentionally ignored.
+    let mut config = create_test_config();
+    config.mqtt_broker.client_id = Some("should-be-ignored".to_string());
+    let id = mqtt_utils::resolve_client_id(&config.mqtt_broker);
+    assert_ne!(id, "should-be-ignored");
+    assert_eq!(id.len(), 36);
+}
+
+#[test]
+fn test_client_id_is_configured_value_when_tls_enabled() {
+    let config = create_test_config_with_tls(Some("vehicle-tls-001"));
+    let id_a = mqtt_utils::resolve_client_id(&config.mqtt_broker);
+    let id_b = mqtt_utils::resolve_client_id(&config.mqtt_broker);
+    assert_eq!(id_a, "vehicle-tls-001");
+    assert_eq!(id_b, "vehicle-tls-001");
+}
+
+#[test]
+fn test_client_id_falls_back_to_uuid_when_tls_enabled_without_id() {
+    let config = create_test_config_with_tls(None);
+    let id = mqtt_utils::resolve_client_id(&config.mqtt_broker);
+    assert_eq!(id.len(), 36, "expected UUID fallback when TLS on but no client_id");
+}
+
+#[test]
+fn test_build_ssl_options_with_no_cert_files() {
+    // Builder should accept a TLS config with no trust/cert/key files set
+    // (e.g. relying on system trust store) without panicking.
+    let config = create_test_config_with_tls(Some("vehicle-tls-001"));
+    let _ssl_options = mqtt_utils::build_ssl_options(&config.mqtt_broker);
+}
+
+#[test]
+fn test_simulator_works_with_tls_config() {
+    // The simulator's state machine must behave identically regardless of
+    // broker TLS settings, since broker config is only consumed by the MQTT layer.
+    let config = create_test_config_with_tls(Some("vehicle-tls-001"));
+    let mut simulator = VehicleSimulator::new(config);
+
+    let instant_actions = InstantActions {
+        header_id: 1,
+        timestamp: utils::get_timestamp(),
+        version: "2.0.0".to_string(),
+        manufacturer: "TEST".to_string(),
+        serial_number: "TEST-AGV-001".to_string(),
+        actions: vec![create_init_position_action()],
+    };
+
+    simulator.accept_instant_actions(instant_actions);
+    simulator.process_instant_actions();
+
+    assert_eq!(simulator.state.action_states[0].action_status, ActionStatus::Finished);
+    assert!(simulator.state.agv_position.as_ref().unwrap().position_initialized);
+}
